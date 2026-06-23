@@ -215,7 +215,8 @@ export async function getReportsDataAction(filter: {
         where: { organizationId, clientId: userId },
         select: { id: true },
       });
-      const ids = clientProjects.map((p) => p.id);
+      // const ids = clientProjects.map((p) => p.id);
+const ids = clientProjects.map((p: ProjectIdOnly) => p.id);
       trackingWhereClause.projectId = { in: ids };
     } else if (role === "MEMBER") {
       // Member can see only their own reports or projects they manage
@@ -266,7 +267,7 @@ export async function getReportsDataAction(filter: {
         task: { select: { id: true, title: true } },
       },
       orderBy: { startTime: "desc" },
-    })
+    });
 
     const summaryByProject: Record<string, number> = {};
     const summaryByUser: Record<string, number> = {};
