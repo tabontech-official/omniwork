@@ -3,21 +3,13 @@
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 type ProjectIdOnly = {
-      id: string;
-    };
-export async function getDashboardDataAction() {
-  try {
-    const session = await getSession();
-    if (!session) return { error: "Unauthorized" };
-
-    const { role, userId, organizationId } = session;
-    type ProjectStatus = "PLANNING" | "IN_PROGRESS" | "ON_HOLD" | "COMPLETE";
+  id: string;
+};
+ type ProjectStatus = "PLANNING" | "IN_PROGRESS" | "ON_HOLD" | "COMPLETE";
 
     type ProjectStatusOnly = {
       status: ProjectStatus | string | null;
     };
-
-    
 
     type TimeLog = {
       id: string;
@@ -40,6 +32,13 @@ export async function getDashboardDataAction() {
         title?: string | null;
       } | null;
     };
+export async function getDashboardDataAction() {
+  try {
+    const session = await getSession();
+    if (!session) return { error: "Unauthorized" };
+
+    const { role, userId, organizationId } = session;
+   
     // 1. Owner Dashboard View
     if (role === "OWNER") {
       const [totalProjects, totalUsers, totalHoursObj, recentLogs] =
@@ -216,7 +215,7 @@ export async function getReportsDataAction(filter: {
         select: { id: true },
       });
       // const ids = clientProjects.map((p) => p.id);
-const ids = clientProjects.map((p: ProjectIdOnly) => p.id);
+      const ids = clientProjects.map((p: ProjectIdOnly) => p.id);
       trackingWhereClause.projectId = { in: ids };
     } else if (role === "MEMBER") {
       // Member can see only their own reports or projects they manage
