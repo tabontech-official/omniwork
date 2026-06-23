@@ -31,7 +31,7 @@ type ProjectIdOnly = {
         id?: string;
         title?: string | null;
       } | null;
-    };
+    }
 export async function getDashboardDataAction() {
   try {
     const session = await getSession();
