@@ -21,12 +21,15 @@ import {
   LogOut,
   Command,
   CheckSquare,
+  FileText,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { logoutAction } from '@/app/actions/auth';
+import { OrganizationSwitcher } from '@/components/dashboard/OrganizationSwitcher';
+import { NotificationBell } from '@/components/dashboard/NotificationBell';
 
 export default function WorkspaceLayoutClient({
   children,
@@ -68,8 +71,8 @@ export default function WorkspaceLayoutClient({
     { name: 'Dashboard', href: '/workspace', icon: LayoutDashboard, exact: true, roles: ['OWNER', 'PM', 'MEMBER', 'CLIENT'] },
     { name: 'Projects', href: '/workspace/projects', icon: FolderKanban, exact: false, roles: ['OWNER', 'PM', 'MEMBER', 'CLIENT'] },
     { name: 'Tasks', href: '/workspace/tasks', icon: CheckSquare, exact: false, roles: ['OWNER', 'PM', 'MEMBER', 'CLIENT'] },
-    { name: 'Time Tracking', href: '/workspace/tracking', icon: Timer, exact: false, roles: ['OWNER', 'PM', 'MEMBER'] },
-    { name: 'Timesheets', href: '/workspace/timesheets', icon: CalendarDays, exact: false, roles: ['OWNER', 'PM', 'MEMBER'] },
+    { name: 'Time Tracking', href: '/workspace/time', icon: Timer, exact: false, roles: ['OWNER', 'PM', 'MEMBER'] },
+    { name: 'Timesheet', href: '/workspace/timesheet', icon: FileText, exact: false, roles: ['OWNER', 'PM', 'MEMBER', 'CLIENT'] },
     { name: 'Users', href: '/workspace/users', icon: UsersIcon, exact: false, roles: ['OWNER'] },
     { name: 'Reports', href: '/workspace/reports', icon: BarChart3, exact: false, roles: ['OWNER', 'PM'] },
     { name: 'Settings', href: '/workspace/settings', icon: Settings, exact: false, roles: ['OWNER', 'PM', 'MEMBER', 'CLIENT'] },
@@ -230,6 +233,10 @@ export default function WorkspaceLayoutClient({
                 <Menu size={20} />
               </button>
 
+              <div className="hidden sm:block">
+                <OrganizationSwitcher user={user} />
+              </div>
+
               {/* Global Search */}
               <div className="hidden sm:flex max-w-md flex-1 relative group items-center">
                 <Search className="absolute left-3 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
@@ -247,10 +254,7 @@ export default function WorkspaceLayoutClient({
 
             <div className="flex items-center gap-3">
               {/* Notifications */}
-              <button className="relative p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors rounded-full hover:bg-slate-100 dark:hover:bg-slate-800">
-                <Bell size={18} />
-                <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-destructive ring-2 ring-white dark:ring-background"></span>
-              </button>
+              <NotificationBell userId={user.id} />
             </div>
           </header>
 

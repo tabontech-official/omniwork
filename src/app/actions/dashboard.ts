@@ -15,14 +15,14 @@ export async function getDashboardDataAction() {
       const [totalProjects, totalUsers, totalHoursObj, recentLogs] = await Promise.all([
         prisma.project.count({ where: { organizationId } }),
         prisma.user.count({ where: { organizationId } }),
-        prisma.timesheet.aggregate({
+        prisma.timeEntry.aggregate({
           where: { organizationId },
-          _sum: { hours: true },
+          _sum: { activeWorkedDuration: true },
         }),
-        prisma.timesheet.findMany({
+        prisma.timeEntry.findMany({
           where: { organizationId },
-          include: { user: { select: { name: true, role: true } } },
-          orderBy: { date: 'desc' },
+          include: { member: { select: { name: true, role: true } } },
+          orderBy: { createdAt: 'desc' },
           take: 5,
         }),
       ]);
@@ -45,7 +45,7 @@ export async function getDashboardDataAction() {
         metrics: {
           totalProjects,
           totalUsers,
-          totalHours: totalHoursObj._sum.hours || 0,
+          totalHours: (totalHoursObj._sum.activeWorkedDuration || 0) / 3600,
           projectStatusCounts,
           recentLogs,
         },
@@ -68,20 +68,20 @@ export async function getDashboardDataAction() {
             projectManager: { select: { name: true } },
           },
         }),
-        prisma.timesheet.aggregate({
-          where: { userId, organizationId },
-          _sum: { hours: true },
+        prisma.timeEntry.aggregate({
+          where: { memberId: userId, organizationId },
+          _sum: { activeWorkedDuration: true },
         }),
         prisma.task.findMany({
           where: {
             project: { organizationId },
             assignees: { some: { userId } },
           },
-          include: { project: { select: { name: true } } },
+          include: { project: { select: { name: true } }, status: true },
         }),
-        prisma.timesheet.findMany({
-          where: { userId, organizationId },
-          orderBy: { date: 'desc' },
+        prisma.timeEntry.findMany({
+          where: { organizationId },
+          orderBy: { createdAt: 'desc' },
           take: 5,
         }),
       ]);
@@ -95,7 +95,7 @@ export async function getDashboardDataAction() {
         metrics: {
           totalProjects: assignedProjects.length,
           totalManagedProjects: managedProjects.length,
-          totalHours: myHoursObj._sum.hours || 0,
+          totalHours: (myHoursObj._sum.activeWorkedDuration || 0) / 3600,
           myTasks,
           recentLogs,
           assignedProjects,
@@ -122,19 +122,17 @@ export async function getDashboardDataAction() {
       const projectIds = clientProjects.map((p) => p.id);
 
       // Let's get total hours of tracking for these projects
-      const trackingLogs = await prisma.timeTracking.findMany({
+      const trackingLogs = await prisma.timeEntry.findMany({
         where: {
           projectId: { in: projectIds },
           organizationId,
-          endTime: { not: null },
         },
       });
 
       let totalHours = 0;
       trackingLogs.forEach((log) => {
-        if (log.endTime) {
-          const hours = (new Date(log.endTime).getTime() - new Date(log.startTime).getTime()) / (1000 * 60 * 60);
-          totalHours += hours;
+        if (log.activeWorkedDuration) {
+          totalHours += log.activeWorkedDuration / 3600;
         }
       });
 
@@ -195,7 +193,7 @@ export async function getReportsDataAction(filter: {
 
       // unless filtering by user, they only see their own time logs
       if (!filter.projectId && !filter.userId) {
-        trackingWhereClause.userId = userId;
+        trackingWhereClause.memberId = userId;
       }
     }
 
@@ -203,7 +201,7 @@ export async function getReportsDataAction(filter: {
       trackingWhereClause.projectId = filter.projectId;
     }
     if (filter.userId && role === 'OWNER') {
-      trackingWhereClause.userId = filter.userId;
+      trackingWhereClause.memberId = filter.userId;
     }
     if (filter.startDate || filter.endDate) {
       trackingWhereClause.startTime = {};
@@ -218,58 +216,55 @@ export async function getReportsDataAction(filter: {
       }
     }
 
-    const logs = await prisma.timeTracking.findMany({
+    const logs = await prisma.timeEntry.findMany({
       where: trackingWhereClause,
       include: {
-        user: { select: { name: true, email: true } },
-        project: { select: { name: true } },
-        task: { select: { title: true } },
+        member: { select: { id: true, name: true, email: true } },
+        project: { select: { id: true, name: true } },
+        task: { select: { id: true, title: true } },
       },
       orderBy: { startTime: 'desc' },
     });
 
-    // Formulate project-level summaries and user-level summaries
-    const summaries: any = {};
-    let grandTotalHours = 0;
+    const summaryByProject: Record<string, number> = {};
+    const summaryByUser: Record<string, number> = {};
+    let totalHours = 0;
 
     logs.forEach((log) => {
-      if (!log.endTime) return;
-      const hours = (new Date(log.endTime).getTime() - new Date(log.startTime).getTime()) / (1000 * 60 * 60);
-      grandTotalHours += hours;
+      const hours = (log.activeWorkedDuration || 0) / 3600;
+      
+      const pName = log.project?.name || 'Unknown';
+      const uName = log.member?.name || 'Unknown';
 
-      const pName = log.project.name;
-      if (!summaries[pName]) {
-        summaries[pName] = { hours: 0, logsCount: 0 };
-      }
-      summaries[pName].hours += hours;
-      summaries[pName].logsCount += 1;
+      summaryByProject[pName] = (summaryByProject[pName] || 0) + hours;
+      summaryByUser[uName] = (summaryByUser[uName] || 0) + hours;
+      totalHours += hours;
     });
 
-    const projectSummary = Object.keys(summaries).map((name) => ({
+    const projectSummary = Object.keys(summaryByProject).map((name) => ({
       name,
-      hours: Math.round(summaries[name].hours * 100) / 100,
-      logsCount: summaries[name].logsCount,
+      hours: Math.round(summaryByProject[name] * 100) / 100,
     }));
 
     return {
       success: true,
       logs: logs.map((l) => {
-        const h = l.endTime
-          ? Math.round(((new Date(l.endTime).getTime() - new Date(l.startTime).getTime()) / (1000 * 60 * 60)) * 100) / 100
+        const h = l.activeWorkedDuration
+          ? Math.round((l.activeWorkedDuration / 3600) * 100) / 100
           : 0;
         return {
           id: l.id,
-          userName: l.user.name,
+          userName: l.member?.name || 'Unknown',
           projectName: l.project.name,
           taskName: l.task?.title || 'N/A',
           startTime: l.startTime,
           endTime: l.endTime,
-          description: l.description || '',
+          description: l.notes || '',
           hours: h,
         };
       }),
       projectSummary,
-      grandTotalHours: Math.round(grandTotalHours * 100) / 100,
+      grandTotalHours: Math.round(totalHours * 100) / 100,
     };
   } catch (error: any) {
     return { error: error.message || 'Failed to fetch report data.' };

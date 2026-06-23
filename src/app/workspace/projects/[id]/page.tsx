@@ -36,13 +36,14 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
         include: {
           assignees: {
             include: { user: { select: { id: true, name: true } } }
-          }
+          },
+          status: true
         }
       },
-      timeTrackings: {
+      timeEntries: {
         orderBy: { startTime: 'desc' },
         include: {
-          user: { select: { id: true, name: true } },
+          member: { select: { id: true, name: true } },
           task: { select: { id: true, title: true } }
         }
       }
@@ -62,5 +63,15 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
   // Wait, our timesheet model is daily. TimeTrackings link to projects.
   // We can just rely on the timeTrackings array included above for detailed logs.
 
-  return <ProjectDetailClient project={project} currentUser={session} />;
+  const users = await prisma.user.findMany({
+    where: { organizationId: session.organizationId },
+    select: { id: true, name: true, email: true, role: true, status: true }
+  });
+
+  const taskStatuses = await prisma.taskStatus.findMany({
+    where: { organizationId: session.organizationId },
+    orderBy: { order: 'asc' }
+  });
+
+  return <ProjectDetailClient project={project} currentUser={session} users={users} taskStatuses={taskStatuses} />;
 }

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
   FolderKanban, Search, Plus, Calendar, Clock, 
-  MoreHorizontal, Users, ShieldAlert, ArrowRight, X
+  MoreHorizontal, Users, ShieldAlert, ArrowRight, X, Trash2
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,20 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { createProjectAction, deleteProjectAction, quickCreateClientAction } from '@/app/actions/projects';
+
+const formatDate = (dateInput: any) => {
+  if (!dateInput) return '';
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return String(dateInput);
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${month}/${day}/${year}`;
+  } catch (e) {
+    return String(dateInput);
+  }
+};
 
 export default function ProjectsClient({ initialProjects, users, currentUser }: { initialProjects: any[], users: any[], currentUser: any }) {
   const [projects, setProjects] = useState(initialProjects);
@@ -27,10 +41,21 @@ export default function ProjectsClient({ initialProjects, users, currentUser }: 
   // Modal States
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isQuickClientOpen, setIsQuickClientOpen] = useState(false);
+  const [isMemberSelectOpen, setIsMemberSelectOpen] = useState(false);
 
   // Form States
   const [isOngoing, setIsOngoing] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  
+  type DraftTask = {
+    id: string;
+    title: string;
+    description: string;
+    status: string;
+    priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    assigneeId: string;
+  };
+  const [projectTasks, setProjectTasks] = useState<DraftTask[]>([]);
   
   const clients = users.filter(u => u.role === 'CLIENT' && u.status === 'ACTIVE');
   const members = users.filter(u => u.role === 'MEMBER' && u.status === 'ACTIVE');
@@ -76,9 +101,17 @@ export default function ProjectsClient({ initialProjects, users, currentUser }: 
       startDate: formData.get('startDate') as string,
       endDate: formData.get('endDate') as string,
       isOngoing,
+      projectBudget: formData.get('projectBudget') ? Number(formData.get('projectBudget')) : undefined,
       totalAllocatedHours: formData.get('totalAllocatedHours') ? Number(formData.get('totalAllocatedHours')) : undefined,
       notes: formData.get('notes') as string,
       assigneeIds: selectedAssignees,
+      tasks: projectTasks.filter(t => t.title.trim() !== '').map(t => ({
+        title: t.title,
+        description: t.description,
+        priority: t.priority as any,
+        status: t.status,
+        assigneeIds: t.assigneeId ? [t.assigneeId] : [],
+      })),
     };
 
     startTransition(async () => {
@@ -88,6 +121,7 @@ export default function ProjectsClient({ initialProjects, users, currentUser }: 
       } else {
         toast.success('Project created successfully');
         setIsCreateOpen(false);
+        setProjectTasks([]);
         window.location.reload();
       }
     });
@@ -233,11 +267,11 @@ export default function ProjectsClient({ initialProjects, users, currentUser }: 
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(p.startDate).toLocaleDateString()}</span>
+                      <span className="flex items-center gap-1"><Calendar size={12}/> {formatDate(p.startDate)}</span>
                       {p.isOngoing ? (
                         <span className="flex items-center gap-1 text-emerald-600"><Clock size={12}/> Ongoing</span>
                       ) : p.endDate ? (
-                        <span className="flex items-center gap-1"><ArrowRight size={12}/> {new Date(p.endDate).toLocaleDateString()}</span>
+                        <span className="flex items-center gap-1"><ArrowRight size={12}/> {formatDate(p.endDate)}</span>
                       ) : null}
                     </div>
                   </TableCell>
@@ -288,7 +322,12 @@ export default function ProjectsClient({ initialProjects, users, currentUser }: 
 
       {/* Create Project Modal */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <DialogContent 
+          className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto custom-scrollbar"
+          onInteractOutside={(e) => {
+            if (isMemberSelectOpen || isQuickClientOpen) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Create New Project</DialogTitle>
             <DialogDescription>Setup a new project workspace, assign a PM, and configure timelines.</DialogDescription>
@@ -374,30 +413,144 @@ export default function ProjectsClient({ initialProjects, users, currentUser }: 
             </div>
 
             {/* Resources */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Total Allocated Hours <span className="text-xs text-muted-foreground font-normal">(Optional)</span></label>
-              <Input name="totalAllocatedHours" type="number" step="0.5" min="0" placeholder="e.g. 120" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Project Budget ($) <span className="text-xs text-muted-foreground font-normal">(Optional)</span></label>
+                <Input name="projectBudget" type="number" step="0.01" min="0" placeholder="e.g. 5000" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Total Allocated Hours <span className="text-destructive">*</span></label>
+                <Input name="totalAllocatedHours" type="number" step="0.1" min="0" required placeholder="e.g. 120" />
+              </div>
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Assign Team Members</label>
-              <div className="border rounded-md p-3 max-h-[150px] overflow-y-auto space-y-1 bg-background shadow-inner">
-                {members.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">No members available to assign.</p>
+              <div 
+                onClick={() => setIsMemberSelectOpen(true)}
+                className="flex min-h-[40px] w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm cursor-pointer hover:bg-muted/50 transition-colors"
+              >
+                {selectedAssignees.length === 0 ? (
+                  <span className="text-muted-foreground">Click to select members...</span>
                 ) : (
-                  members.map(m => (
-                    <label key={m.id} className="flex items-center gap-2 p-1.5 hover:bg-muted/50 rounded cursor-pointer transition-colors">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedAssignees.includes(m.id)}
-                        onChange={() => toggleAssignee(m.id)}
-                        className="rounded border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <span className="text-sm">{m.name}</span>
-                    </label>
-                  ))
+                  <div className="flex flex-wrap gap-1">
+                    {selectedAssignees.map(id => {
+                      const member = members.find(m => m.id === id);
+                      return member ? (
+                        <Badge variant="secondary" key={id} className="text-xs font-normal">
+                          {member.name}
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
                 )}
+                <Users className="h-4 w-4 text-muted-foreground ml-2 flex-shrink-0" />
               </div>
+            </div>
+
+            {/* Project Tasks */}
+            <div className="space-y-3 pt-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-medium">Initial Tasks <span className="text-xs text-muted-foreground font-normal">(Optional)</span></label>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setProjectTasks([...projectTasks, { id: Math.random().toString(), title: '', description: '', status: 'TODO', priority: 'MEDIUM', assigneeId: '' }])}
+                  className="h-8 text-xs"
+                >
+                  <Plus className="mr-1 h-3 w-3" /> Add Task
+                </Button>
+              </div>
+              
+              {projectTasks.length > 0 && (
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                  {projectTasks.map((task, index) => (
+                    <div key={task.id} className="p-3 border rounded-md bg-muted/20 space-y-3 relative group">
+                      <button 
+                        type="button" 
+                        onClick={() => setProjectTasks(projectTasks.filter(t => t.id !== task.id))}
+                        className="absolute right-2 top-2 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                      
+                      <div className="space-y-1.5 pr-6">
+                        <Input 
+                          placeholder="Task Title *" 
+                          value={task.title} 
+                          onChange={e => {
+                            const newTasks = [...projectTasks];
+                            newTasks[index].title = e.target.value;
+                            setProjectTasks(newTasks);
+                          }}
+                          className="h-8 text-sm bg-background"
+                          required
+                        />
+                      </div>
+                      
+                      <div className="space-y-1.5">
+                        <Input 
+                          placeholder="Description (Optional)" 
+                          value={task.description} 
+                          onChange={e => {
+                            const newTasks = [...projectTasks];
+                            newTasks[index].description = e.target.value;
+                            setProjectTasks(newTasks);
+                          }}
+                          className="h-8 text-sm bg-background"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-3 gap-2">
+                        <select 
+                          value={task.status}
+                          onChange={e => {
+                            const newTasks = [...projectTasks];
+                            newTasks[index].status = e.target.value;
+                            setProjectTasks(newTasks);
+                          }}
+                          className="flex h-8 w-full rounded-md border bg-background px-2 text-xs focus:ring-1 focus:ring-ring"
+                        >
+                          <option value="TODO">To Do</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="DONE">Done</option>
+                        </select>
+                        
+                        <select 
+                          value={task.priority}
+                          onChange={e => {
+                            const newTasks = [...projectTasks];
+                            newTasks[index].priority = e.target.value as any;
+                            setProjectTasks(newTasks);
+                          }}
+                          className="flex h-8 w-full rounded-md border bg-background px-2 text-xs focus:ring-1 focus:ring-ring"
+                        >
+                          <option value="LOW">Low</option>
+                          <option value="MEDIUM">Medium</option>
+                          <option value="HIGH">High</option>
+                          <option value="CRITICAL">Critical</option>
+                        </select>
+
+                        <select 
+                          value={task.assigneeId}
+                          onChange={e => {
+                            const newTasks = [...projectTasks];
+                            newTasks[index].assigneeId = e.target.value;
+                            setProjectTasks(newTasks);
+                          }}
+                          className="flex h-8 w-full rounded-md border bg-background px-2 text-xs focus:ring-1 focus:ring-ring"
+                        >
+                          <option value="">Unassigned</option>
+                          {members.map(m => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <DialogFooter className="pt-4 border-t mt-6">
@@ -405,38 +558,74 @@ export default function ProjectsClient({ initialProjects, users, currentUser }: 
               <Button type="submit" disabled={isPending}>{isPending ? 'Creating...' : 'Create Project'}</Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
 
-      {/* Quick Create Client Modal */}
-      <Dialog open={isQuickClientOpen} onOpenChange={setIsQuickClientOpen}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>Quick Add Client</DialogTitle>
-            <DialogDescription>Create a client record instantly to assign to this project.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleQuickCreateClient} className="space-y-4 pt-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Client Name</label>
-              <Input name="name" required placeholder="Acme Corp" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Client Email</label>
-              <Input name="email" type="email" required placeholder="contact@acme.com" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Password</label>
-              <Input name="password" type="password" required placeholder="••••••••" minLength={6} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Confirm Password</label>
-              <Input name="confirmPassword" type="password" required placeholder="••••••••" minLength={6} />
-            </div>
-            <DialogFooter className="pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsQuickClientOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={isPending}>{isPending ? 'Adding...' : 'Add Client'}</Button>
-            </DialogFooter>
-          </form>
+          {/* Quick Create Client Modal */}
+          <Dialog open={isQuickClientOpen} onOpenChange={setIsQuickClientOpen}>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader>
+                <DialogTitle>Quick Add Client</DialogTitle>
+                <DialogDescription>Create a client record instantly to assign to this project.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleQuickCreateClient} className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Client Name</label>
+                  <Input name="name" required placeholder="Acme Corp" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Client Email</label>
+                  <Input name="email" type="email" required placeholder="contact@acme.com" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Password</label>
+                  <Input name="password" type="password" required placeholder="••••••••" minLength={6} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Confirm Password</label>
+                  <Input name="confirmPassword" type="password" required placeholder="••••••••" minLength={6} />
+                </div>
+                <DialogFooter className="pt-4">
+                  <Button type="button" variant="outline" onClick={() => setIsQuickClientOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={isPending}>{isPending ? 'Adding...' : 'Add Client'}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Select Members Modal */}
+          <Dialog open={isMemberSelectOpen} onOpenChange={setIsMemberSelectOpen}>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader>
+                <DialogTitle>Select Team Members</DialogTitle>
+                <DialogDescription>Choose members to assign to this project.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-4">
+                <div className="border rounded-md p-3 max-h-[300px] overflow-y-auto space-y-1 bg-background shadow-inner custom-scrollbar">
+                  {members.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic">No members available to assign.</p>
+                  ) : (
+                    members.map(m => (
+                      <label key={m.id} className="flex items-center gap-3 p-2 hover:bg-muted/50 rounded cursor-pointer transition-colors">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedAssignees.includes(m.id)}
+                          onChange={() => toggleAssignee(m.id)}
+                          className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium">{m.name}</span>
+                          <span className="text-xs text-muted-foreground">{m.email}</span>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <DialogFooter className="pt-4 border-t mt-4">
+                  <Button type="button" onClick={() => setIsMemberSelectOpen(false)} className="w-full">Done</Button>
+                </DialogFooter>
+              </div>
+            </DialogContent>
+          </Dialog>
+
         </DialogContent>
       </Dialog>
 

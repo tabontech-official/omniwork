@@ -16,9 +16,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { createTaskAction, updateTaskStatusAction, deleteTaskAction } from '@/app/actions/projects';
+import { createTaskAction, updateTaskAction, deleteTaskAction } from '@/app/actions/tasks';
+import { updateProjectAction } from '@/app/actions/projects';
+import ProjectConversation from './ProjectConversation';
 
-export default function ProjectDetailClient({ project, currentUser }: { project: any, currentUser: any }) {
+export default function ProjectDetailClient({ project, currentUser, users = [], taskStatuses = [] }: { project: any, currentUser: any, users?: any[], taskStatuses?: any[] }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [isPending, startTransition] = useTransition();
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
@@ -27,6 +29,15 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
   const [newTaskPriority, setNewTaskPriority] = useState('MEDIUM');
   const [newTaskHours, setNewTaskHours] = useState('');
   const [newTaskAssignees, setNewTaskAssignees] = useState<string[]>([]);
+  
+  // Project Edit
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  const [editIsOngoing, setEditIsOngoing] = useState(project.isOngoing);
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>(project.assignees.map((a: any) => a.userId));
+  const [isMemberSelectOpen, setIsMemberSelectOpen] = useState(false);
+  
+  const clients = users.filter(u => u.role === 'CLIENT' && u.status === 'ACTIVE');
+  const members = users.filter(u => u.role === 'MEMBER' && u.status === 'ACTIVE');
 
   // Permissions
   const isOwner = currentUser.role === 'OWNER';
@@ -35,17 +46,44 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
   const canManageTasks = isOwner || isPM || isClient; // As per rules: Clients can create tasks in own projects.
 
   // Metrics
-  const totalTrackedMs = project.timeTrackings.reduce((acc: number, t: any) => {
-    if (t.endTime) {
-      return acc + (new Date(t.endTime).getTime() - new Date(t.startTime).getTime());
-    }
-    return acc;
+  const totalTrackedMs = project.timeEntries.reduce((acc: number, t: any) => {
+    return acc + (t.activeWorkedDuration || 0) * 1000;
   }, 0);
   const totalTrackedHours = Math.round((totalTrackedMs / (1000 * 60 * 60)) * 100) / 100;
   
   const progressPercent = project.totalAllocatedHours 
     ? Math.round((totalTrackedHours / project.totalAllocatedHours) * 100)
     : 0;
+
+  async function handleUpdateProject(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const res = await updateProjectAction(project.id, {
+        name: formData.get('name') as string,
+        description: formData.get('description') as string,
+        notes: formData.get('notes') as string,
+        clientId: formData.get('clientId') as string || undefined,
+        projectManagerId: formData.get('projectManagerId') as string || undefined,
+        status: formData.get('status') as any,
+        priority: formData.get('priority') as any,
+        startDate: formData.get('startDate') as string,
+        endDate: formData.get('endDate') as string || undefined,
+        isOngoing: editIsOngoing,
+        assigneeIds: selectedAssignees,
+        projectBudget: formData.get('projectBudget') ? parseFloat(formData.get('projectBudget') as string) : undefined,
+        totalAllocatedHours: formData.get('totalAllocatedHours') ? parseFloat(formData.get('totalAllocatedHours') as string) : undefined,
+      });
+      
+      if (res.error) {
+        toast.error(res.error);
+      } else {
+        toast.success('Project updated successfully');
+        setIsEditProjectOpen(false);
+        window.location.reload();
+      }
+    });
+  }
 
   async function handleCreateTask(e?: React.FormEvent) {
     if (e) e.preventDefault();
@@ -60,6 +98,8 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
         newTaskDescription || undefined, 
         newTaskPriority as any,
         hours,
+        undefined, // dueDate
+        undefined, // statusId
         newTaskAssignees
       );
       if (res.error) {
@@ -79,7 +119,7 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
 
   const handleTaskStatusChange = async (taskId: string, newStatus: string) => {
     startTransition(async () => {
-      const res = await updateTaskStatusAction(taskId, newStatus);
+      const res = await updateTaskAction(taskId, { statusId: newStatus });
       if (res.error) toast.error(res.error);
       else window.location.reload();
     });
@@ -129,9 +169,150 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
             )}
           </div>
           {(isOwner || isPM) && (
-            <Button variant="outline" size="sm" className="shadow-sm">
-              <Settings className="mr-2 h-4 w-4" /> Project Settings
-            </Button>
+            <>
+              <Dialog open={isEditProjectOpen} onOpenChange={setIsEditProjectOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="shadow-sm">
+                    <Settings className="mr-2 h-4 w-4" /> Edit Project
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto custom-scrollbar">
+                  <DialogHeader>
+                    <DialogTitle>Edit Project</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleUpdateProject} className="space-y-6 pt-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2 sm:col-span-2">
+                        <label className="text-sm font-medium">Project Name <span className="text-destructive">*</span></label>
+                        <Input name="name" required defaultValue={project.name} />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <label className="text-sm font-medium">Description</label>
+                        <Input name="description" defaultValue={project.description || ''} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Client</label>
+                        <select name="clientId" defaultValue={project.clientId || ''} className="flex h-9 w-full rounded-md border bg-background px-3 text-sm focus:ring-1 focus:ring-ring">
+                          <option value="">No Client (Internal)</option>
+                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Project Manager</label>
+                        <select name="projectManagerId" defaultValue={project.projectManagerId || ''} className="flex h-9 w-full rounded-md border bg-background px-3 text-sm focus:ring-1 focus:ring-ring">
+                          <option value="">Unassigned</option>
+                          {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Status</label>
+                        <select name="status" defaultValue={project.status} className="flex h-9 w-full rounded-md border bg-background px-3 text-sm focus:ring-1 focus:ring-ring">
+                          <option value="PLANNING">Planning</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="ON_HOLD">On Hold</option>
+                          <option value="COMPLETE">Complete</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Priority</label>
+                        <select name="priority" defaultValue={project.priority} className="flex h-9 w-full rounded-md border bg-background px-3 text-sm focus:ring-1 focus:ring-ring">
+                          <option value="LOW">Low</option>
+                          <option value="MEDIUM">Medium</option>
+                          <option value="HIGH">High</option>
+                          <option value="CRITICAL">Critical</option>
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Start Date <span className="text-destructive">*</span></label>
+                        <Input name="startDate" type="date" required defaultValue={new Date(project.startDate).toISOString().split('T')[0]} />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-sm font-medium">End Date</label>
+                          <div className="flex items-center gap-1.5">
+                            <input type="checkbox" id="edit-ongoing" checked={editIsOngoing} onChange={(e) => setEditIsOngoing(e.target.checked)} className="rounded border-gray-300 text-primary focus:ring-primary"/>
+                            <label htmlFor="edit-ongoing" className="text-xs text-muted-foreground cursor-pointer">Ongoing</label>
+                          </div>
+                        </div>
+                        {!editIsOngoing ? (
+                          <Input name="endDate" type="date" required={!editIsOngoing} defaultValue={project.endDate ? new Date(project.endDate).toISOString().split('T')[0] : ''} />
+                        ) : (
+                          <div className="flex h-9 w-full items-center justify-center rounded-md border bg-muted/50 text-xs text-muted-foreground italic">Project has no end date</div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Project Budget ($)</label>
+                        <Input name="projectBudget" type="number" step="0.01" min="0" defaultValue={project.projectBudget || ''} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Total Allocated Hours <span className="text-destructive">*</span></label>
+                        <Input name="totalAllocatedHours" type="number" step="0.1" min="0" required defaultValue={project.totalAllocatedHours || ''} />
+                      </div>
+
+                      <div className="space-y-2 sm:col-span-2">
+                        <label className="text-sm font-medium">Assign Team Members</label>
+                        <div 
+                          onClick={() => setIsMemberSelectOpen(true)}
+                          className="flex min-h-[40px] w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                        >
+                          {selectedAssignees.length === 0 ? (
+                            <span className="text-muted-foreground">Click to select members...</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {selectedAssignees.map(id => {
+                                const member = members.find(m => m.id === id);
+                                return member ? <Badge variant="secondary" key={id} className="text-xs font-normal">{member.name}</Badge> : null;
+                              })}
+                            </div>
+                          )}
+                          <Users className="h-4 w-4 text-muted-foreground ml-2 flex-shrink-0" />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <Button type="submit" className="w-full" disabled={isPending}>
+                      {isPending ? 'Saving...' : 'Update Project'}
+                    </Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              {/* Select Members Modal (Sibling to avoid bubbling issues) */}
+              <Dialog open={isMemberSelectOpen} onOpenChange={setIsMemberSelectOpen}>
+                <DialogContent className="sm:max-w-[400px]">
+                  <DialogHeader>
+                    <DialogTitle>Select Team Members</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="border rounded-md p-3 max-h-[300px] overflow-y-auto space-y-1 bg-background shadow-inner custom-scrollbar">
+                      {members.length === 0 ? (
+                        <p className="text-sm text-muted-foreground italic">No members available.</p>
+                      ) : (
+                        members.map(m => (
+                          <label key={m.id} className="flex items-center gap-3 p-2 hover:bg-muted/50 rounded cursor-pointer transition-colors">
+                            <input 
+                              type="checkbox" 
+                              checked={selectedAssignees.includes(m.id)}
+                              onChange={() => {
+                                setSelectedAssignees(prev => prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]);
+                              }}
+                              className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium">{m.name}</span>
+                              <span className="text-xs text-muted-foreground">{m.email}</span>
+                            </div>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                    <Button type="button" onClick={() => setIsMemberSelectOpen(false)} className="w-full">Done</Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </>
           )}
         </div>
       </div>
@@ -143,6 +324,7 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
           <TabsTrigger value="tasks" className="flex items-center gap-2"><CheckSquare size={14}/> Tasks <Badge variant="secondary" className="ml-1 text-[10px] px-1.5">{project.tasks.length}</Badge></TabsTrigger>
           {!isClient && <TabsTrigger value="team" className="flex items-center gap-2"><Users size={14}/> Team</TabsTrigger>}
           {!isClient && <TabsTrigger value="time" className="flex items-center gap-2"><Timer size={14}/> Time Tracking</TabsTrigger>}
+          <TabsTrigger value="conversation" className="flex items-center gap-2"><MessageSquare size={14}/> Conversation</TabsTrigger>
           <TabsTrigger value="activity" className="flex items-center gap-2"><Activity size={14}/> Activity</TabsTrigger>
         </TabsList>
 
@@ -307,16 +489,20 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
 
           {/* Simple Kanban Board Layout */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {['TODO', 'IN_PROGRESS', 'DONE'].map(status => {
-              const statusTasks = project.tasks.filter((t: any) => t.status === status);
+            {taskStatuses.map((status, index) => {
+              const statusTasks = project.tasks.filter((t: any) => {
+                if (t.statusId === status.id) return true;
+                // If a task lacks a status, map it to the very first column by default
+                if (!t.statusId && index === 0) return true;
+                return false;
+              });
+
               return (
-                <div key={status} className="flex flex-col bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border shadow-sm">
+                <div key={status.id} className="flex flex-col bg-slate-50 dark:bg-slate-900/50 rounded-xl p-3 border shadow-sm">
                   <div className="flex items-center justify-between mb-3 px-1">
                     <h3 className="font-semibold text-sm text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                      {status === 'TODO' && <div className="h-2 w-2 rounded-full bg-slate-400"></div>}
-                      {status === 'IN_PROGRESS' && <div className="h-2 w-2 rounded-full bg-blue-500"></div>}
-                      {status === 'DONE' && <div className="h-2 w-2 rounded-full bg-emerald-500"></div>}
-                      {status.replace('_', ' ')}
+                      <div className="h-2 w-2 rounded-full" style={{ backgroundColor: status.color || '#cccccc' }}></div>
+                      {status.name}
                     </h3>
                     <Badge variant="secondary">{statusTasks.length}</Badge>
                   </div>
@@ -348,14 +534,14 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
                           
                           <div className="flex items-center justify-between mt-3 pl-6">
                             <select 
-                              value={t.status}
+                              value={t.statusId || taskStatuses[0]?.id || ''}
                               onChange={(e) => handleTaskStatusChange(t.id, e.target.value)}
                               disabled={!canManageTasks || isPending}
                               className="text-[10px] font-medium bg-muted/50 border-0 rounded px-1.5 py-0.5"
                             >
-                              <option value="TODO">To Do</option>
-                              <option value="IN_PROGRESS">In Progress</option>
-                              <option value="DONE">Done</option>
+                              {taskStatuses.map((s: any) => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
                             </select>
 
                             <div className="flex -space-x-1.5">
@@ -425,26 +611,19 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {project.timeTrackings.length === 0 ? (
+                  {project.timeEntries.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center h-32 text-muted-foreground">No time logs recorded.</TableCell>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground h-24">No time logged yet.</TableCell>
                     </TableRow>
                   ) : (
-                    project.timeTrackings.map((log: any) => {
-                      const durMs = log.endTime ? new Date(log.endTime).getTime() - new Date(log.startTime).getTime() : null;
-                      const durHrs = durMs ? (durMs / (1000 * 60 * 60)).toFixed(2) : 'Active';
+                    project.timeEntries.map((log: any) => {
+                      const h = log.activeWorkedDuration ? Math.round((log.activeWorkedDuration / 3600) * 100) / 100 : 0;
                       return (
                         <TableRow key={log.id}>
-                          <TableCell className="font-medium">{log.user.name}</TableCell>
-                          <TableCell>{log.task?.title || <span className="text-muted-foreground italic">General</span>}</TableCell>
-                          <TableCell className="text-muted-foreground">{new Date(log.startTime).toLocaleString()}</TableCell>
-                          <TableCell>
-                            {log.endTime ? (
-                              <Badge variant="secondary" className="font-mono">{durHrs}h</Badge>
-                            ) : (
-                              <Badge variant="default" className="bg-emerald-500 hover:bg-emerald-600 animate-pulse">Running</Badge>
-                            )}
-                          </TableCell>
+                          <TableCell className="font-medium">{log.member?.name}</TableCell>
+                          <TableCell>{log.task?.title || 'General'}</TableCell>
+                          <TableCell>{new Date(log.startTime).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-mono font-medium">{h} hrs</TableCell>
                           <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{log.description || '-'}</TableCell>
                         </TableRow>
                       );
@@ -456,8 +635,20 @@ export default function ProjectDetailClient({ project, currentUser }: { project:
           </TabsContent>
         )}
 
+        {/* CONVERSATION TAB */}
+        <TabsContent value="conversation" className="space-y-4">
+          <Card className="shadow-sm border-slate-200">
+            <ProjectConversation 
+              projectId={project.id} 
+              currentUser={currentUser} 
+              organizationId={project.organizationId} 
+              isClient={isClient}
+            />
+          </Card>
+        </TabsContent>
+
         {/* ACTIVITY TAB */}
-        <TabsContent value="activity">
+        <TabsContent value="activity" className="space-y-4">
           <Card className="shadow-sm border-dashed">
             <CardContent className="h-64 flex flex-col items-center justify-center text-muted-foreground space-y-4">
               <Activity size={48} className="opacity-20" />

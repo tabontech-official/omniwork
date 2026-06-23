@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { createNotification } from './notifications';
 import { ProjectStatus, Priority, Role } from '@prisma/client';
 
 import { hashPassword } from '@/lib/auth'; // Ensure this is imported
@@ -20,7 +21,7 @@ export async function quickCreateClientAction(name: string, email: string, passw
     }
 
     // Check if user already exists
-    const existing = await prisma.user.findUnique({
+    const existing = await prisma.user.findFirst({
       where: { email },
     });
     if (existing) {
@@ -46,6 +47,29 @@ export async function quickCreateClientAction(name: string, email: string, passw
   }
 }
 
+export async function quickCreateProjectAction(name: string) {
+  try {
+    const session = await getSession();
+    if (!session || session.role !== 'OWNER') {
+      return { error: 'Unauthorized: Only Owners can create projects.' };
+    }
+    if (!name) return { error: 'Project name is required.' };
+
+    const project = await prisma.project.create({
+      data: {
+        name,
+        organizationId: session.organizationId,
+        startDate: new Date(),
+        status: 'PLANNING',
+        priority: 'MEDIUM',
+      },
+    });
+    return { success: true, project };
+  } catch (error: any) {
+    return { error: error.message || 'Failed to quickly create project.' };
+  }
+}
+
 export async function createProjectAction(data: {
   name: string;
   description?: string;
@@ -56,9 +80,17 @@ export async function createProjectAction(data: {
   startDate: string;
   endDate?: string;
   isOngoing: boolean;
+  projectBudget?: number;
   totalAllocatedHours?: number;
   priority: Priority;
   assigneeIds: string[];
+  tasks?: {
+    title: string;
+    description?: string;
+    priority: Priority;
+    status: string;
+    assigneeIds: string[];
+  }[];
 }) {
   try {
     const session = await getSession();
@@ -76,13 +108,18 @@ export async function createProjectAction(data: {
       startDate,
       endDate,
       isOngoing,
+      projectBudget,
       totalAllocatedHours,
       priority,
       assigneeIds,
+      tasks,
     } = data;
 
     if (!name || !startDate) {
       return { error: 'Project Name and Start Date are required.' };
+    }
+    if (totalAllocatedHours === undefined || totalAllocatedHours === null || totalAllocatedHours < 0) {
+      return { error: 'Total Allocated Hours is required and must be greater than or equal to 0.' };
     }
 
     // Create project
@@ -98,6 +135,7 @@ export async function createProjectAction(data: {
         startDate: new Date(startDate),
         endDate: isOngoing || !endDate ? null : new Date(endDate),
         isOngoing,
+        projectBudget: projectBudget || null,
         totalAllocatedHours: totalAllocatedHours || null,
         priority,
         assignees: {
@@ -105,7 +143,32 @@ export async function createProjectAction(data: {
             userId,
           })),
         },
+        tasks: {
+          create: tasks?.map((task) => ({
+            title: task.title,
+            description: task.description || null,
+            priority: task.priority,
+            organizationId: session.organizationId,
+            assignees: {
+              create: task.assigneeIds.map((userId) => ({
+                userId,
+              })),
+            },
+          })) || [],
+        },
       },
+    });
+
+    await createNotification({
+      organizationId: session.organizationId,
+      projectId: project.id,
+      actorId: session.userId,
+      actorRole: session.role,
+      type: 'project_created',
+      title: 'New Project Created',
+      message: `Project "${project.name}" has been created.`,
+      actionUrl: `/workspace/projects/${project.id}`,
+      clientVisible: true
     });
 
     return { success: true, project };
@@ -127,6 +190,7 @@ export async function updateProjectAction(
     startDate: string;
     endDate?: string;
     isOngoing: boolean;
+    projectBudget?: number;
     totalAllocatedHours?: number;
     priority: Priority;
     assigneeIds: string[];
@@ -158,10 +222,15 @@ export async function updateProjectAction(
       startDate,
       endDate,
       isOngoing,
+      projectBudget,
       totalAllocatedHours,
       priority,
       assigneeIds,
     } = data;
+
+    if (totalAllocatedHours === undefined || totalAllocatedHours === null || totalAllocatedHours < 0) {
+      return { error: 'Total Allocated Hours is required and must be greater than or equal to 0.' };
+    }
 
     // Delete existing assignees, then add new ones
     await prisma.projectAssignee.deleteMany({
@@ -180,6 +249,7 @@ export async function updateProjectAction(
         startDate: new Date(startDate),
         endDate: isOngoing || !endDate ? null : new Date(endDate),
         isOngoing,
+        projectBudget: projectBudget || null,
         totalAllocatedHours: totalAllocatedHours || null,
         priority,
         assignees: {
@@ -188,6 +258,18 @@ export async function updateProjectAction(
           })),
         },
       },
+    });
+
+    await createNotification({
+      organizationId: session.organizationId,
+      projectId: updated.id,
+      actorId: session.userId,
+      actorRole: session.role,
+      type: 'project_updated',
+      title: 'Project Updated',
+      message: `Project "${updated.name}" details have been updated.`,
+      actionUrl: `/workspace/projects/${updated.id}`,
+      clientVisible: true
     });
 
     return { success: true, project: updated };
@@ -273,127 +355,4 @@ export async function getProjectsAction() {
   }
 }
 
-// Tasks Actions
-export async function createTaskAction(
-  projectId: string, 
-  title: string, 
-  description: string | undefined,
-  priority: Priority = 'MEDIUM',
-  allocatedHours: number | undefined,
-  assigneeIds: string[]
-) {
-  try {
-    const session = await getSession();
-    if (!session) return { error: 'Unauthorized' };
-
-    // Verify project belongs to organization
-    const project = await prisma.project.findFirst({
-      where: { id: projectId, organizationId: session.organizationId },
-    });
-
-    if (!project) return { error: 'Project not found.' };
-
-    // Permissions check:
-    // Owner can create tasks.
-    // Project PM can create tasks.
-    // Client can create tasks in their own project.
-    const isOwner = session.role === 'OWNER';
-    const isPM = project.projectManagerId === session.userId;
-    const isClient = project.clientId === session.userId && session.role === 'CLIENT';
-
-    if (!isOwner && !isPM && !isClient) {
-      return { error: 'Unauthorized to create tasks in this project.' };
-    }
-
-    if (!title) return { error: 'Task title is required.' };
-
-    const task = await prisma.task.create({
-      data: {
-        organizationId: session.organizationId,
-        projectId,
-        title,
-        description: description || null,
-        allocatedHours: allocatedHours || null,
-        priority,
-        status: 'TODO',
-        assignees: {
-          create: assigneeIds.map((userId) => ({
-            userId,
-          })),
-        },
-      },
-      include: {
-        assignees: {
-          include: {
-            user: {
-              select: { id: true, name: true },
-            },
-          },
-        },
-      },
-    });
-
-    return { success: true, task };
-  } catch (error: any) {
-    return { error: error.message || 'Failed to create task.' };
-  }
-}
-
-export async function updateTaskStatusAction(taskId: string, status: string) {
-  try {
-    const session = await getSession();
-    if (!session) return { error: 'Unauthorized' };
-
-    const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!task) return { error: 'Task not found.' };
-
-    const updated = await prisma.task.update({
-      where: { id: taskId },
-      data: { status },
-    });
-
-    return { success: true, task: updated };
-  } catch (error: any) {
-    return { error: error.message || 'Failed to update task status.' };
-  }
-}
-
-export async function deleteTaskAction(taskId: string) {
-  try {
-    const session = await getSession();
-    if (!session) return { error: 'Unauthorized' };
-
-    const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        project: true,
-      },
-    });
-
-    if (!task) return { error: 'Task not found.' };
-
-    const isOwner = session.role === 'OWNER';
-    const isPM = task.project.projectManagerId === session.userId;
-
-    if (!isOwner && !isPM) {
-      return { error: 'Unauthorized to delete this task.' };
-    }
-
-    await prisma.task.delete({
-      where: { id: taskId },
-    });
-
-    return { success: true };
-  } catch (error: any) {
-    return { error: error.message || 'Failed to delete task.' };
-  }
-}
+// Tasks Actions moved to actions/tasks.ts

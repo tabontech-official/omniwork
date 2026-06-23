@@ -16,8 +16,14 @@ model Organization {
   invitations  Invitation[]
   projects     Project[]
   tasks        Task[]
-  timesheets   Timesheet[]
-  timeTrackings TimeTracking[]
+  taskStatuses TaskStatus[]
+  timeEntries  TimeEntry[]
+  activeTimers ActiveTimer[]
+  timeScreenshots TimeScreenshot[]
+  settings     Setting[]
+  reports      Report[]
+  notifications Notification[]
+  messages     ProjectMessage[]
 }
 
 enum Role {
@@ -34,7 +40,7 @@ enum UserStatus {
 model User {
   id               String            @id @default(uuid())
   name             String
-  email            String            @unique
+  email            String
   passwordHash     String
   role             Role
   status           UserStatus        @default(ACTIVE)
@@ -48,8 +54,16 @@ model User {
   managedProjects  Project[]         @relation("ProjectManager")
   projectAssignees ProjectAssignee[]
   taskAssignees    TaskAssignee[]
-  timesheets       Timesheet[]
-  timeTrackings    TimeTracking[]
+  timeEntries      TimeEntry[]
+  activeTimers     ActiveTimer[]
+  timeScreenshots  TimeScreenshot[]
+  notificationsReceived Notification[] @relation("NotificationRecipient")
+  notificationsActed    Notification[] @relation("NotificationActor")
+  messagesSent          ProjectMessage[] @relation("MessageSender")
+  messageMentions       MessageMention[]
+  messageReadReceipts   MessageReadReceipt[]
+
+  @@unique([email, organizationId])
 }
 
 model Invitation {
@@ -92,6 +106,7 @@ model Project {
   startDate            DateTime
   endDate              DateTime?
   isOngoing            Boolean           @default(false)
+  projectBudget        Float?
   totalAllocatedHours  Float?
   priority             Priority          @default(MEDIUM)
   createdAt            DateTime          @default(now())
@@ -99,7 +114,11 @@ model Project {
   // Relations
   assignees            ProjectAssignee[]
   tasks                Task[]
-  timeTrackings        TimeTracking[]
+  timeEntries          TimeEntry[]
+  activeTimers         ActiveTimer[]
+  timeScreenshots      TimeScreenshot[]
+  notifications        Notification[]
+  messages             ProjectMessage[]
 }
 
 model ProjectAssignee {
@@ -111,6 +130,20 @@ model ProjectAssignee {
   @@id([projectId, userId])
 }
 
+model TaskStatus {
+  id             String       @id @default(uuid())
+  name           String
+  color          String       @default("#cccccc")
+  order          Int          @default(0)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdByOwner Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  
+  tasks          Task[]
+}
+
 model Task {
   id             String         @id @default(uuid())
   organizationId String
@@ -120,14 +153,21 @@ model Task {
   title          String
   description    String?
   allocatedHours Float?
-  status         String         @default("TODO") // "TODO", "IN_PROGRESS", "DONE"
+  trackedHours   Float?         @default(0)
+  dueDate        DateTime?
+  statusId       String?
+  status         TaskStatus?    @relation(fields: [statusId], references: [id], onDelete: SetNull)
   priority       Priority       @default(MEDIUM)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   
   // Relations
   assignees      TaskAssignee[]
-  timeTrackings  TimeTracking[]
+  timeEntries    TimeEntry[]
+  activeTimers   ActiveTimer[]
+  timeScreenshots TimeScreenshot[]
+  notifications  Notification[]
+  messageMentions MessageTaskMention[]
 }
 
 model TaskAssignee {
@@ -139,30 +179,204 @@ model TaskAssignee {
   @@id([taskId, userId])
 }
 
-model Timesheet {
+enum TimeEntryType {
+  TIMER
+  MANUAL
+}
+
+enum TimeEntryStatus {
+  SAVED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model TimeEntry {
+  id                   String          @id @default(uuid())
+  organizationId       String
+  organization         Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId            String
+  project              Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId               String?
+  task                 Task?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  memberId             String
+  member               User            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  startTime            DateTime
+  endTime              DateTime?
+  duration             Float?          // total hours
+  activeWorkedDuration Float?          // active worked hours
+  idleDuration         Float?          // idle hours
+  entryType            TimeEntryType   @default(TIMER)
+  status               TimeEntryStatus @default(SAVED)
+  notes                String?
+  createdBy            String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  screenshots          TimeScreenshot[]
+  notifications        Notification[]
+}
+
+model ActiveTimer {
+  id                   String          @id @default(uuid())
+  organizationId       String
+  organization         Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId            String
+  project              Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId               String?
+  task                 Task?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  memberId             String
+  member               User            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  startTime            DateTime
+  lastActivityAt       DateTime
+  idleStartedAt        DateTime?
+  isIdle               Boolean         @default(false)
+  activeWorkedDuration Float           @default(0) // seconds
+  idleDuration         Float           @default(0) // seconds
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  screenshots          TimeScreenshot[]
+
+  @@unique([memberId])
+}
+
+model TimeScreenshot {
+  id              String         @id @default(uuid())
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId          String?
+  task            Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  memberId        String
+  member          User           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  timeEntryId     String?
+  timeEntry       TimeEntry?     @relation(fields: [timeEntryId], references: [id], onDelete: Cascade)
+  activeTimerId   String?
+  activeTimer     ActiveTimer?   @relation(fields: [activeTimerId], references: [id], onDelete: Cascade)
+  screenshotUrl   String
+  capturedAt      DateTime
+  activityLevel   Int            @default(100)
+  createdAt       DateTime       @default(now())
+}
+
+model Setting {
   id             String       @id @default(uuid())
-  userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  date           DateTime
-  hours          Float
-  description    String?
+  key            String
+  value          String
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([key, organizationId])
+}
+
+model Report {
+  id             String       @id @default(uuid())
+  name           String
+  type           String
+  config         String       // JSON string for report configuration
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Notification {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  projectId      String?
+  project        Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  taskId         String?
+  task           Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  
+  timeEntryId    String?
+  timeEntry      TimeEntry?   @relation(fields: [timeEntryId], references: [id], onDelete: Cascade)
+  
+  recipientId    String
+  recipient      User         @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  
+  actorId        String?
+  actor          User?        @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  
+  actorRole      String?
+  recipientRole  String?
+  
+  type           String
+  title          String
+  message        String
+  isRead         Boolean      @default(false)
+  actionUrl      String?
+  metadata       String?      // JSON string for additional context
+  
   createdAt      DateTime     @default(now())
 }
 
-model TimeTracking {
+enum MessageVisibility {
+  PUBLIC
+  INTERNAL
+}
+
+model ProjectMessage {
   id             String       @id @default(uuid())
-  userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId      String
-  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  taskId         String?
-  task           Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  startTime      DateTime
-  endTime        DateTime?
-  description    String?
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  senderId       String
+  sender         User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  
+  content        String
+  visibility     MessageVisibility @default(PUBLIC)
+  parentMessageId String?
+  isEdited       Boolean      @default(false)
+  deletedAt      DateTime?
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  
+  mentions       MessageMention[]
+  taskMentions   MessageTaskMention[]
+  readReceipts   MessageReadReceipt[]
 }
+
+model MessageMention {
+  id              String         @id @default(uuid())
+  messageId       String
+  message         ProjectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  mentionedUserId String
+  mentionedUser   User           @relation(fields: [mentionedUserId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+
+  @@unique([messageId, mentionedUserId])
+}
+
+model MessageTaskMention {
+  id              String         @id @default(uuid())
+  messageId       String
+  message         ProjectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  taskId          String
+  task            Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+
+  @@unique([messageId, taskId])
+}
+
+model MessageReadReceipt {
+  id              String         @id @default(uuid())
+  messageId       String
+  message         ProjectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt          DateTime       @default(now())
+
+  @@unique([messageId, userId])
+}
+

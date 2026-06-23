@@ -58,8 +58,8 @@ export async function addUserAction(formData: FormData) {
     const role = roleString as 'OWNER' | 'MEMBER' | 'CLIENT';
 
     // Check if email already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
+    const existingUser = await prisma.user.findFirst({
+      where: { email, organizationId: session.organizationId },
     });
 
     if (existingUser) {
@@ -116,7 +116,7 @@ export async function editUserAction(id: string, formData: FormData) {
 
     // Check if changing email and if new email is already taken
     if (email !== targetUser.email) {
-      const existingUser = await prisma.user.findUnique({ where: { email } });
+      const existingUser = await prisma.user.findFirst({ where: { email, organizationId: session.organizationId } });
       if (existingUser) {
         return { error: 'This email is already in use.' };
       }
@@ -233,6 +233,10 @@ export async function resetUserPasswordAction(id: string, formData: FormData) {
 
     return { success: true, message: 'Password reset successfully.' };
   } catch (error: any) {
-    return { error: error.message || 'Failed to reset password.' };
+    return { error: error.message || 'Failed to resend invitation.' };
   }
+}
+
+export async function acceptInvitationAction(formData: FormData): Promise<{ success?: boolean; error?: string }> {
+  return { success: true };
 }

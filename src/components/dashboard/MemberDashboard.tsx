@@ -106,7 +106,7 @@ export default function MemberDashboard({ metrics }: { metrics: any }) {
                     <div key={task.id} className="group flex flex-col sm:flex-row sm:items-center justify-between p-3.5 border rounded-xl hover:shadow-md transition-all bg-white hover:border-primary/30">
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5">
-                          {task.status === 'DONE' ? (
+                          {task.status?.name?.toUpperCase() === 'DONE' ? (
                             <CheckCircle2 className="text-emerald-500" size={18} />
                           ) : (
                             <div className="h-4 w-4 rounded-full border-2 border-slate-300 group-hover:border-primary transition-colors" />
@@ -126,7 +126,7 @@ export default function MemberDashboard({ metrics }: { metrics: any }) {
                       </div>
                       
                       <div className="mt-3 sm:mt-0 ml-7 sm:ml-0 flex items-center gap-2">
-                        <Badge variant="secondary" className="text-xs">{task.status.replace('_', ' ')}</Badge>
+                        <Badge variant="secondary" className="text-xs">{task.status?.name || 'To Do'}</Badge>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 group-hover:text-primary">
                           <MoreVertical size={14} />
                         </Button>

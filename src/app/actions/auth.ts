@@ -1,4 +1,3 @@
-'use strain'; // Wait, standard Next.js directive is 'use server';
 'use server';
 
 import { prisma } from '@/lib/db';
@@ -15,13 +14,15 @@ export async function signupAction(formData: FormData) {
       return { error: 'All fields are required.' };
     }
 
-    // Check if user exists
-    const existingUser = await prisma.user.findUnique({
+    // Check if user already exists as an owner of any organization?
+    // Wait, if they sign up again with same email, we shouldn't let them if they already exist globally
+    // We can just findFirst
+    const existingUser = await prisma.user.findFirst({
       where: { email },
     });
 
     if (existingUser) {
-      return { error: 'User with this email already exists.' };
+      return { error: 'User with this email already exists. Log in and create an organization from the dashboard instead.' };
     }
 
     // Create organization
@@ -64,14 +65,17 @@ export async function loginAction(formData: FormData) {
       return { error: 'Email and password are required.' };
     }
 
-    // Find User
-    const user = await prisma.user.findUnique({
-      where: { email },
+    // Find User (pick the first active one)
+    const users = await prisma.user.findMany({
+      where: { email, status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' }, // usually the oldest org is the primary
     });
 
-    if (!user) {
+    if (users.length === 0) {
       return { error: 'Invalid email or password.' };
     }
+
+    const user = users[0];
 
     // Verify Password
     const isValid = await verifyPassword(password, user.passwordHash);
@@ -86,6 +90,87 @@ export async function loginAction(formData: FormData) {
   } catch (error: any) {
     console.error('Login error:', error);
     return { error: error.message || 'Failed to log in.' };
+  }
+}
+
+export async function createOrganizationAction(name: string) {
+  try {
+    const session = await getSession();
+    if (!session) return { error: 'Unauthorized' };
+
+    // Fetch the current user's profile to clone it
+    const currentUser = await prisma.user.findUnique({
+      where: { id: session.userId }
+    });
+
+    if (!currentUser) return { error: 'Current user not found' };
+
+    // Create the new organization
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') + '-' + Date.now().toString().slice(-4);
+    const org = await prisma.organization.create({
+      data: { name, slug }
+    });
+
+    // Create a new User record for this organization
+    const newUser = await prisma.user.create({
+      data: {
+        name: currentUser.name,
+        email: currentUser.email,
+        passwordHash: currentUser.passwordHash,
+        role: 'OWNER',
+        organizationId: org.id
+      }
+    });
+
+    // Immediately switch session to the new organization
+    await createSession(newUser);
+
+    return { success: true, organizationId: org.id };
+  } catch (error: any) {
+    return { error: error.message || 'Failed to create organization.' };
+  }
+}
+
+export async function switchOrganizationAction(organizationId: string) {
+  try {
+    const session = await getSession();
+    if (!session) return { error: 'Unauthorized' };
+
+    // Find the User record for this email in the target organization
+    const targetUser = await prisma.user.findFirst({
+      where: {
+        email: session.email,
+        organizationId: organizationId,
+        status: 'ACTIVE'
+      }
+    });
+
+    if (!targetUser) {
+      return { error: 'You do not have active access to this organization.' };
+    }
+
+    // Regenerate session
+    await createSession(targetUser);
+    
+    return { success: true };
+  } catch (error: any) {
+    return { error: error.message || 'Failed to switch organization.' };
+  }
+}
+
+export async function getUserOrganizationsAction() {
+  try {
+    const session = await getSession();
+    if (!session) return { error: 'Unauthorized' };
+
+    const memberships = await prisma.user.findMany({
+      where: { email: session.email, status: 'ACTIVE' },
+      include: { organization: true }
+    });
+
+    return { success: true, memberships };
+  } catch (error: any) {
+    return { error: error.message || 'Failed to fetch organizations.' };
   }
 }
 
