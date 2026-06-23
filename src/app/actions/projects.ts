@@ -3,7 +3,7 @@
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { createNotification } from './notifications';
-import { Priority, Role, Prisma } from '@prisma/client';
+import {  Prisma } from '@prisma/client';
 import { hashPassword } from '@/lib/auth'; // Ensure this is imported
 
 // Quick Client Creation inside project form:
@@ -81,12 +81,12 @@ export async function createProjectAction(data: {
   isOngoing: boolean;
   projectBudget?: number;
   totalAllocatedHours?: number;
-  priority: Priority;
+  priority: Prisma.ProjectCreateInput["priority"];
   assigneeIds: string[];
   tasks?: {
     title: string;
     description?: string;
-    priority: Priority;
+    priority: Prisma.ProjectCreateInput["priority"];
     status: Prisma.ProjectCreateInput["status"];
     assigneeIds: string[];
   }[];
@@ -191,7 +191,7 @@ export async function updateProjectAction(
     isOngoing: boolean;
     projectBudget?: number;
     totalAllocatedHours?: number;
-    priority: Priority;
+    priority: Prisma.ProjectCreateInput["priority"];
     assigneeIds: string[];
   }
 ) {
