@@ -191,7 +191,7 @@ export async function updateProjectAction(
     notes?: string;
     clientId?: string;
     projectManagerId?: string;
-    status: Prisma.ProjectCreateInput["status"];
+    statusId?: string;
     startDate: string;
     endDate?: string;
     isOngoing: boolean;
@@ -223,7 +223,7 @@ export async function updateProjectAction(
       notes,
       clientId,
       projectManagerId,
-      status,
+      statusId,
       startDate,
       endDate,
       isOngoing,
@@ -250,7 +250,7 @@ export async function updateProjectAction(
         notes: notes || null,
         clientId: clientId || null,
         projectManagerId: projectManagerId || null,
-        status,
+        statusId: statusId || null,
         startDate: new Date(startDate),
         endDate: isOngoing || !endDate ? null : new Date(endDate),
         isOngoing,
