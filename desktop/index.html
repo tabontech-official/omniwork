@@ -301,8 +301,8 @@
       </div>
 
       <div class="action-buttons">
-        <button id="ok-btn">OK</button>
-        <button id="cancel-select-btn">Cancel</button>
+        <button id="ok-btn" style="background: linear-gradient(to bottom, #2398db, #087bc0); padding: 8px 30px;">OK</button>
+        <button id="cancel-select-btn" style="background: linear-gradient(to bottom, #a0a0a0, #888888); padding: 8px 30px;">Cancel</button>
       </div>
     </div>
   </div>
@@ -330,10 +330,20 @@
 
     <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;">
       <div style="font-size: 14px; color: #555;">Enter Task Details (max:500 chars)</div>
-      <button style="padding: 3px 8px; font-size: 11px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; color: #333; cursor: pointer;">Recent Messages</button>
+      <button id="recent-memos-btn" style="padding: 3px 8px; font-size: 11px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; color: #333; cursor: pointer;">Recent Messages</button>
     </div>
 
-    <textarea id="task-details" style="width: 100%; height: 100px; padding: 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 2px; resize: none; margin-bottom: 15px; box-sizing: border-box;"></textarea>
+    <div style="position: relative;">
+      <textarea id="task-details" style="width: 100%; height: 100px; padding: 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 2px; resize: none; margin-bottom: 15px; box-sizing: border-box;"></textarea>
+      
+      <div id="memos-dropdown" class="hidden" style="position: absolute; top: 0; right: 0; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 300px; max-height: 200px; overflow-y: auto; z-index: 100;">
+        <div style="padding: 8px; font-weight: bold; border-bottom: 1px solid #eee; font-size: 12px; display: flex; justify-content: space-between;">
+          Recent Messages
+          <span id="close-memos-btn" style="cursor: pointer; color: red;">X</span>
+        </div>
+        <div id="memos-list" style="display: flex; flex-direction: column;"></div>
+      </div>
+    </div>
 
     <div style="display: flex; align-items: center; margin-bottom: 20px; font-size: 13px; color: #000;">
       <input type="checkbox" id="remind-me" style="margin: 0 8px 0 0;" />
@@ -496,14 +506,54 @@
       const task = project.tasks.find(t => t.id === selectedTaskId);
       document.getElementById('tracking-title').innerText = `${project.name}\n${task ? task.title : 'No Task'}`;
       
-      window.electronAPI.startTimer({ projectId: selectedProjectId, taskId: selectedTaskId });
+      const notes = document.getElementById('task-details').value.trim();
+      window.electronAPI.startTimer({ projectId: selectedProjectId, taskId: selectedTaskId, notes });
     }
+
+    // Memos Logic
+    document.getElementById('recent-memos-btn').addEventListener('click', async () => {
+      const dropdown = document.getElementById('memos-dropdown');
+      const list = document.getElementById('memos-list');
+      
+      dropdown.classList.remove('hidden');
+      list.innerHTML = '<div style="padding: 8px; font-size: 12px; color: #666;">Loading...</div>';
+      
+      const res = await window.electronAPI.getRecentMemos();
+      if (res && res.memos && res.memos.length > 0) {
+        list.innerHTML = '';
+        res.memos.forEach(memo => {
+          const div = document.createElement('div');
+          div.style.padding = '8px';
+          div.style.fontSize = '12px';
+          div.style.borderBottom = '1px solid #eee';
+          div.style.cursor = 'pointer';
+          div.innerText = memo.length > 50 ? memo.substring(0, 50) + '...' : memo;
+          div.addEventListener('click', () => {
+            document.getElementById('task-details').value = memo;
+            dropdown.classList.add('hidden');
+          });
+          div.addEventListener('mouseover', () => div.style.background = '#f0f8ff');
+          div.addEventListener('mouseout', () => div.style.background = 'white');
+          list.appendChild(div);
+        });
+      } else {
+        list.innerHTML = '<div style="padding: 8px; font-size: 12px; color: #666;">No recent messages</div>';
+      }
+    });
+
+    document.getElementById('close-memos-btn').addEventListener('click', () => {
+      document.getElementById('memos-dropdown').classList.add('hidden');
+    });
 
     document.getElementById('stop-btn').addEventListener('click', () => {
       window.electronAPI.stopTimer();
       document.getElementById('tracker-view').classList.add('hidden');
-      document.getElementById('project-select-view').classList.remove('hidden');
-      renderProjectList(); // Reset to project selection
+      document.getElementById('task-select-view').classList.remove('hidden');
+    });
+
+    window.electronAPI.onForceUiStop(() => {
+      document.getElementById('tracker-view').classList.add('hidden');
+      document.getElementById('task-select-view').classList.remove('hidden');
     });
 
     // Timer Sync

@@ -33,6 +33,7 @@ export default function TimeClient({
         timeEntries={initialTimeEntries} 
         allUsers={allUsers} 
         allProjects={allProjects} 
+        allTasks={allTasks}
       />
     );
   }

@@ -415,3 +415,47 @@ export async function deleteTimeEntryAction(id: string) {
     return { error: error.message || 'Failed to delete entry.' };
   }
 }
+
+export async function getDailyWorksnapsDataAction(dateStr: string, memberId: string) {
+  try {
+    const session = await getSession();
+    if (!session || session.role !== 'OWNER') return { error: 'Unauthorized' };
+
+    const startOfDay = new Date(dateStr);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(dateStr);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const screenshots = await prisma.timeScreenshot.findMany({
+      where: {
+        organizationId: session.organizationId,
+        memberId,
+        capturedAt: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
+      },
+      include: {
+        project: { select: { id: true, name: true } },
+        task: { select: { id: true, title: true } }
+      },
+      orderBy: { capturedAt: 'asc' }
+    });
+
+    const entries = await prisma.timeEntry.findMany({
+      where: {
+        organizationId: session.organizationId,
+        memberId,
+        startTime: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
+      }
+    });
+
+    return { success: true, screenshots, entries };
+  } catch (error: any) {
+    return { error: error.message || 'Failed to fetch worksnaps data.' };
+  }
+}

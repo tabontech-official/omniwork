@@ -39,8 +39,10 @@ export async function POST(request: NextRequest) {
           lastActivityAt: new Date(timer.lastActivityAt),
           idleStartedAt: timer.idleStartedAt ? new Date(timer.idleStartedAt) : null,
           isIdle: timer.isIdle,
+          isIdle: timer.isIdle,
           activeWorkedDuration: timer.activeWorkedDuration,
           idleDuration: timer.idleDuration,
+          notes: timer.notes || null,
         },
         create: {
           organizationId,
@@ -51,8 +53,10 @@ export async function POST(request: NextRequest) {
           lastActivityAt: new Date(timer.lastActivityAt),
           idleStartedAt: timer.idleStartedAt ? new Date(timer.idleStartedAt) : null,
           isIdle: timer.isIdle,
+          isIdle: timer.isIdle,
           activeWorkedDuration: timer.activeWorkedDuration,
           idleDuration: timer.idleDuration,
+          notes: timer.notes || null,
         }
       });
     } else if (body.stopTimer) {
@@ -88,6 +92,7 @@ export async function POST(request: NextRequest) {
               duration: (existingEntry.duration || 0) + entry.duration,
               activeWorkedDuration: (existingEntry.activeWorkedDuration || 0) + entry.activeWorkedDuration,
               idleDuration: (existingEntry.idleDuration || 0) + entry.idleDuration,
+              notes: entry.notes || existingEntry.notes,
             }
           });
         } else {
@@ -102,6 +107,7 @@ export async function POST(request: NextRequest) {
               duration: entry.duration,
               activeWorkedDuration: entry.activeWorkedDuration,
               idleDuration: entry.idleDuration,
+              notes: entry.notes || null,
               entryType: 'TIMER',
               status: 'SAVED',
             }

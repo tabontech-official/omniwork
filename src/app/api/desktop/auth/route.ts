@@ -39,17 +39,17 @@ export async function POST(request: NextRequest) {
     );
 
     // Fetch user's assigned projects and tasks for the desktop UI
-    const projects = await prisma.project.findMany({
+    const rawProjects = await prisma.project.findMany({
       where: {
         organizationId: user.organizationId,
         OR: [
           { assignees: { some: { userId: user.id } } },
           { projectManagerId: user.id },
           ...(user.role === 'OWNER' ? [{}] : []),
-        ],
-        status: { not: 'COMPLETE' }
+        ]
       },
       include: {
+        status: true,
         tasks: {
           where: {
             OR: [
@@ -60,6 +60,12 @@ export async function POST(request: NextRequest) {
           select: { id: true, title: true, statusId: true }
         }
       }
+    });
+
+    // Filter out completed projects
+    const projects = rawProjects.filter(p => {
+      const s = p.status?.name?.toLowerCase() || '';
+      return !s.includes('complete') && !s.includes('done');
     });
 
     return NextResponse.json({

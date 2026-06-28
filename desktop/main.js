@@ -1,11 +1,15 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, desktopCapturer, Tray, Menu } = require('electron');
 const path = require('path');
 const axios = require('axios');
+const fs = require('fs');
+const { exec } = require('child_process');
 
 let mainWindow;
+let tray = null;
 let timerInterval = null;
 let screenshotInterval = null;
 let syncInterval = null;
+let forceQuit = false;
 
 let token = null;
 let activeTimer = null;
@@ -24,6 +28,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 400,
     height: 420,
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -32,9 +37,71 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
+
+  mainWindow.on('close', (event) => {
+    if (activeTimer && !forceQuit) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+
+  if (activeTimer) {
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'Status: Tracking Active', enabled: false },
+      { type: 'separator' },
+      { label: 'Show App', click: () => mainWindow.show() },
+      { 
+        label: 'Stop Tracking', 
+        click: async () => {
+          stopTrackingLogic();
+          mainWindow.show();
+          mainWindow.webContents.send('force-ui-stop');
+        } 
+      },
+      { type: 'separator' },
+      { 
+        label: 'Quit', 
+        click: () => {
+          forceQuit = true;
+          app.quit();
+        } 
+      }
+    ]);
+    tray.setContextMenu(contextMenu);
+    tray.setToolTip('OmniWork - Tracking Active');
+  } else {
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'Status: Not Tracking', enabled: false },
+      { type: 'separator' },
+      { label: 'Show App', click: () => mainWindow.show() },
+      { type: 'separator' },
+      { 
+        label: 'Quit', 
+        click: () => {
+          forceQuit = true;
+          app.quit();
+        } 
+      }
+    ]);
+    tray.setContextMenu(contextMenu);
+    tray.setToolTip('OmniWork');
+  }
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin') {
+    app.dock.setIcon(path.join(__dirname, 'icon.png'));
+  }
+
+  const trayIconPath = path.join(__dirname, 'tray_icon.png');
+  const icon = require('electron').nativeImage.createFromPath(trayIconPath).resize({ width: 22, height: 22 });
+  tray = new Tray(icon);
+  updateTrayMenu();
+
   createWindow();
 
   app.on('activate', () => {
@@ -45,8 +112,18 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && !activeTimer) {
     app.quit();
+  }
+});
+
+app.on('before-quit', (e) => {
+  if (activeTimer && !forceQuit) {
+    e.preventDefault();
+    forceQuit = true;
+    stopTrackingLogic().then(() => {
+      app.quit();
+    });
   }
 });
 
@@ -66,6 +143,18 @@ ipcMain.on('login', async (event, credentials) => {
   }
 });
 
+ipcMain.handle('get-recent-memos', async () => {
+  if (!token) return { memos: [] };
+  try {
+    const res = await axios.get(`${API_BASE}/memos`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return res.data;
+  } catch (err) {
+    return { memos: [] };
+  }
+});
+
 ipcMain.on('start-timer', (event, data) => {
   activeTimer = {
     projectId: data.projectId,
@@ -75,10 +164,16 @@ ipcMain.on('start-timer', (event, data) => {
     isIdle: false,
     activeWorkedDuration: 0,
     idleDuration: 0,
-    idleStartedAt: null
+    idleStartedAt: null,
+    notes: data.notes || null
   };
 
   lastActivityTime = Date.now();
+  
+  if (mainWindow) {
+    mainWindow.hide();
+  }
+  updateTrayMenu();
 
   timerInterval = setInterval(() => {
     if (!isIdle) {
@@ -111,7 +206,7 @@ ipcMain.on('start-timer', (event, data) => {
   event.reply('status-update', { status: 'active' });
 });
 
-ipcMain.on('stop-timer', async (event) => {
+async function stopTrackingLogic() {
   clearInterval(timerInterval);
   clearInterval(screenshotInterval);
   clearInterval(syncInterval);
@@ -126,11 +221,14 @@ ipcMain.on('stop-timer', async (event) => {
     });
   }
 
-  await syncData(true);
-  
   activeTimer = null;
   isIdle = false;
+  updateTrayMenu();
+  await syncData(true);
+}
 
+ipcMain.on('stop-timer', async (event) => {
+  await stopTrackingLogic();
   event.reply('status-update', { status: 'stopped' });
 });
 
@@ -163,9 +261,31 @@ async function captureScreenshot() {
         capturedAt: new Date().toISOString(),
         activityLevel: 100
       });
+      return;
     }
   } catch (err) {
-    console.error('Screenshot error', err);
+    console.error('Electron desktopCapturer error:', err.message);
+  }
+
+  // Fallback to native macOS screencapture if Electron fails or permissions are tricky
+  if (process.platform === 'darwin') {
+    const tmpPath = path.join(app.getPath('temp'), `screenshot-${Date.now()}.jpg`);
+    exec(`screencapture -x -t jpg "${tmpPath}"`, (error) => {
+      if (!error && fs.existsSync(tmpPath)) {
+        const base64Data = fs.readFileSync(tmpPath, { encoding: 'base64' });
+        const img = `data:image/jpeg;base64,${base64Data}`;
+        screenshots.push({
+          projectId: activeTimer.projectId,
+          taskId: activeTimer.taskId,
+          screenshotUrl: img,
+          capturedAt: new Date().toISOString(),
+          activityLevel: 100
+        });
+        fs.unlinkSync(tmpPath);
+      } else {
+        console.error('Native screencapture also failed:', error);
+      }
+    });
   }
 }
 
@@ -173,7 +293,7 @@ async function syncData(stopTimer = false) {
   if (!token) return;
 
   const payload = {
-    activeTimers: stopTimer ? [] : [activeTimer],
+    activeTimers: activeTimer && !stopTimer ? [activeTimer] : [],
     timeEntries: [...timeEntries],
     screenshots: [...screenshots],
     activityLogs: [...activityLogs],

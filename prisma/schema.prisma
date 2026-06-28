@@ -250,6 +250,7 @@ model ActiveTimer {
   isIdle               Boolean         @default(false)
   activeWorkedDuration Float           @default(0) // seconds
   idleDuration         Float           @default(0) // seconds
+  notes                String?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 

@@ -5,9 +5,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startTimer: (data) => ipcRenderer.send('start-timer', data),
   stopTimer: () => ipcRenderer.send('stop-timer'),
   reportActivity: () => ipcRenderer.send('activity'),
+  getRecentMemos: () => ipcRenderer.invoke('get-recent-memos'),
   
   onLoginSuccess: (callback) => ipcRenderer.on('login-success', (event, ...args) => callback(...args)),
   onLoginError: (callback) => ipcRenderer.on('login-error', (event, ...args) => callback(...args)),
   onTimerTick: (callback) => ipcRenderer.on('timer-tick', (event, ...args) => callback(...args)),
-  onStatusUpdate: (callback) => ipcRenderer.on('status-update', (event, ...args) => callback(...args))
+  onStatusUpdate: (callback) => ipcRenderer.on('status-update', (event, ...args) => callback(...args)),
+  onForceUiStop: (callback) => ipcRenderer.on('force-ui-stop', () => callback())
 });

@@ -34,6 +34,7 @@ export default function CollabixHero() {
       <Link href="#pricing">Pricing</Link>
       <Link href="/about">About</Link>
       <Link href="/blog">Resources</Link>
+      <Link href="/download">Download</Link>
     </nav>
 
     <div className="hidden items-center gap-6 text-[15px] md:flex">
