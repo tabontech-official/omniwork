@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "description": "",
   "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+ "scripts": {
+  "start": "electron .",
+  "dist": "electron-builder",
+  "test": "echo \"Error: no test specified\" && exit 1"
+}
+,
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -20,4 +22,18 @@
     "dotenv": "^17.4.2",
     "jsonwebtoken": "^9.0.3"
   }
+  ,
+"build": {
+  "appId": "com.omniwork.desktop",
+  "productName": "OmniWork",
+  "directories": {
+    "output": "dist"
+  },
+  "mac": {
+    "target": "dmg"
+  },
+  "win": {
+    "target": "nsis"
+  }
+}
 }

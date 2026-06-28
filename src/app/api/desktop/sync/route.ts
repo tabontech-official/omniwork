@@ -39,7 +39,6 @@ export async function POST(request: NextRequest) {
           lastActivityAt: new Date(timer.lastActivityAt),
           idleStartedAt: timer.idleStartedAt ? new Date(timer.idleStartedAt) : null,
           isIdle: timer.isIdle,
-          isIdle: timer.isIdle,
           activeWorkedDuration: timer.activeWorkedDuration,
           idleDuration: timer.idleDuration,
           notes: timer.notes || null,
