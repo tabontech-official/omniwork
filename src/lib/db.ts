@@ -31,4 +31,5 @@ if (globalForPrisma.prisma) {
 }
 
 export const prisma = prismaInstance;
-export { Role, ProjectStatus, Priority } from '@prisma/client';
+export { Role, Priority } from '@prisma/client';
+export type { ProjectStatus } from '@prisma/client';
