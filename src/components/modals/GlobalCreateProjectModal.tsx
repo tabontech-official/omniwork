@@ -4,7 +4,7 @@ import React, { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Users, Trash2, X } from "lucide-react";
+import { Plus, Users, Trash2, X, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -41,6 +41,37 @@ export default function GlobalCreateProjectModal({
   const [isOngoing, setIsOngoing] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [projectTasks, setProjectTasks] = useState<any[]>([]);
+
+  // Inline Status Creation States
+  const [isCreatingStatus, setIsCreatingStatus] = useState(false);
+  const [newStatusName, setNewStatusName] = useState("");
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+
+  const handleCreateStatus = async () => {
+    if (!newStatusName.trim()) return;
+    setIsSavingStatus(true);
+    try {
+      const res = await fetch("/api/project-statuses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newStatusName.trim() }),
+      });
+      if (res.ok) {
+        const newStatus = await res.json();
+        setProjectStatuses((prev) => [...prev, newStatus]);
+        setNewStatusName("");
+        setIsCreatingStatus(false);
+        toast.success("Status created successfully");
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Failed to create status");
+      }
+    } catch (e: any) {
+      toast.error("Failed to create status");
+    } finally {
+      setIsSavingStatus(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -221,28 +252,56 @@ export default function GlobalCreateProjectModal({
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
                     <label className="text-sm font-medium">Status</label>
-                    <Link href="/workspace/settings" onClick={() => setIsOpen(false)} className="text-xs text-blue-600 hover:underline">
-                      Manage Statuses
-                    </Link>
+                    <button 
+                      type="button" 
+                      onClick={() => setIsCreatingStatus(!isCreatingStatus)} 
+                      className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                    >
+                      {isCreatingStatus ? "Cancel" : "+ New Status"}
+                    </button>
                   </div>
-                  {projectStatuses.length === 0 ? (
-                    <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-200">
-                      No statuses available.{' '}
-                      <Link href="/workspace/settings" onClick={() => setIsOpen(false)} className="font-semibold underline">
-                        Create one here.
-                      </Link>
+
+                  {isCreatingStatus ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder="Status Name (e.g. Planning)"
+                        value={newStatusName}
+                        onChange={(e) => setNewStatusName(e.target.value)}
+                        disabled={isSavingStatus}
+                        className="h-9"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleCreateStatus}
+                        disabled={isSavingStatus || !newStatusName.trim()}
+                        className="h-9"
+                      >
+                        {isSavingStatus ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+                      </Button>
                     </div>
                   ) : (
-                    <select
-                      name="statusId"
-                      className="flex h-9 w-full rounded-xl border bg-background px-3 text-sm focus:ring-1 focus:ring-ring"
-                    >
-                      {projectStatuses.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      {projectStatuses.length === 0 ? (
+                        <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                          No statuses available.{' '}
+                          <button type="button" onClick={() => setIsCreatingStatus(true)} className="font-semibold underline">
+                            Create one here.
+                          </button>
+                        </div>
+                      ) : (
+                        <select
+                          name="statusId"
+                          className="flex h-9 w-full rounded-xl border bg-background px-3 text-sm focus:ring-1 focus:ring-ring"
+                        >
+                          {projectStatuses.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </>
                   )}
                 </div>
                 <div className="space-y-2">

@@ -99,23 +99,21 @@ const getPriorityColor = (priority: string) => {
   }
 };
 
-function KanbanColumn({ status, title, count, children }: any) {
+function KanbanColumn({ status, title, count, projectStatuses, children }: any) {
   const { setNodeRef, isOver } = useDroppable({
     id: status,
   });
 
-  const getStatusBorderColor = (status: string) => {
-    switch (status) {
-      case "PLANNING": return "border-t-slate-400";
-      case "IN_PROGRESS": return "border-t-blue-500";
-      case "ON_HOLD": return "border-t-amber-500";
-      case "COMPLETE": return "border-t-emerald-500";
-      default: return "border-t-slate-400";
+  const getStatusBorderColor = (statusId: string) => {
+    const statusObj = projectStatuses?.find((s: any) => s.id === statusId);
+    if (statusObj && statusObj.color) {
+      return { borderTopColor: statusObj.color };
     }
+    return { borderTopColor: '#94a3b8' }; // default slate-400
   };
 
   return (
-    <div ref={setNodeRef} className={`flex flex-col min-w-[340px] max-w-[340px] rounded-3xl border border-t-[4px] shadow-sm backdrop-blur-xl p-4 transition-all duration-300 ${getStatusBorderColor(status)} ${isOver ? 'bg-muted/80 border-primary shadow-md scale-[1.01]' : 'bg-muted/30 hover:bg-muted/40'}`}>
+    <div ref={setNodeRef} className={`flex flex-col min-w-[340px] max-w-[340px] rounded-3xl border border-t-[4px] shadow-sm backdrop-blur-xl p-4 transition-all duration-300 ${isOver ? 'bg-muted/80 shadow-md scale-[1.01]' : 'bg-muted/30 hover:bg-muted/40'}`} style={getStatusBorderColor(status)}>
       <div className="flex items-center justify-between mb-4 px-1">
         <div className="flex items-center gap-2.5">
           <h3 className="font-bold text-sm tracking-wide uppercase text-foreground/80">{title}</h3>
@@ -207,10 +205,12 @@ export default function ProjectsClient({
   initialProjects,
   users,
   currentUser,
+  projectStatuses = []
 }: {
   initialProjects: any[];
   users: any[];
   currentUser: any;
+  projectStatuses?: any[];
 }) {
   const [projects, setProjects] = useState(initialProjects);
   const [isPending, startTransition] = useTransition();
@@ -268,7 +268,8 @@ export default function ProjectsClient({
     projectId: string | null;
     projectName: string;
     newStatus: string | null;
-  }>({ isOpen: false, projectId: null, projectName: "", newStatus: null });
+    newStatusName?: string | null;
+  }>({ isOpen: false, projectId: null, projectName: "", newStatus: null, newStatusName: null });
   const [activeDragProject, setActiveDragProject] = useState<any>(null);
 
   const clients = users.filter(
@@ -316,12 +317,14 @@ export default function ProjectsClient({
     const project = projects.find(p => p.id === projectId);
     const newStatus = over.id as string;
 
-    if (project && project.status !== newStatus) {
+    if (project && project.statusId !== newStatus) {
+      const statusObj = projectStatuses?.find((s: any) => s.id === newStatus);
       setConfirmStatusModal({
         isOpen: true,
         projectId,
         projectName: project.name,
         newStatus,
+        newStatusName: statusObj?.name || newStatus
       });
     }
   };
@@ -329,12 +332,12 @@ export default function ProjectsClient({
   const handleConfirmStatusChange = () => {
     if (!confirmStatusModal.projectId || !confirmStatusModal.newStatus) return;
     
-    const { projectId, newStatus } = confirmStatusModal;
+    const { projectId, newStatus, newStatusName } = confirmStatusModal;
     
     startTransition(async () => {
       // Optimistic update
-      setProjects(projects.map(p => p.id === projectId ? { ...p, status: newStatus } : p));
-      setConfirmStatusModal({ isOpen: false, projectId: null, projectName: "", newStatus: null });
+      setProjects(projects.map(p => p.id === projectId ? { ...p, statusId: newStatus } : p));
+      setConfirmStatusModal({ isOpen: false, projectId: null, projectName: "", newStatus: null, newStatusName: null });
       
       const res = await updateProjectStatusAction(projectId, newStatus as any);
       if (res.error) {
@@ -342,7 +345,7 @@ export default function ProjectsClient({
         // Revert optimistic update
         window.location.reload();
       } else {
-        toast.success(`Project moved to ${newStatus.replace("_", " ")}`);
+        toast.success(`Project moved to ${newStatusName}`);
       }
     });
   };
@@ -518,10 +521,9 @@ export default function ProjectsClient({
             onChange={(e) => setStatusFilter(e.target.value)}
           >
             <option value="ALL">All Statuses</option>
-            <option value="PLANNING">Planning</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="ON_HOLD">On Hold</option>
-            <option value="COMPLETE">Complete</option>
+            {projectStatuses.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -685,10 +687,10 @@ export default function ProjectsClient({
       {viewMode === "KANBAN" && (
         <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar h-[calc(100vh-220px)] animate-in fade-in zoom-in-95 duration-200">
-            {["PLANNING", "IN_PROGRESS", "ON_HOLD", "COMPLETE"].map((status) => {
-              const statusProjects = filteredProjects.filter(p => p.status === status);
+            {projectStatuses.map((status) => {
+              const statusProjects = filteredProjects.filter(p => p.statusId === status.id);
               return (
-                <KanbanColumn key={status} status={status} title={status.replace("_", " ")} count={statusProjects.length}>
+                <KanbanColumn key={status.id} status={status.id} title={status.name} count={statusProjects.length} projectStatuses={projectStatuses}>
                   {statusProjects.map(p => (
                     <KanbanCard key={p.id} project={p} currentUser={currentUser} handleDelete={handleDelete} />
                   ))}
@@ -1276,16 +1278,18 @@ export default function ProjectsClient({
         </DialogContent>
       </Dialog>
       {/* Status Confirmation Modal */}
-      <Dialog open={confirmStatusModal.isOpen} onOpenChange={(isOpen) => !isOpen && setConfirmStatusModal({ isOpen: false, projectId: null, projectName: "", newStatus: null })}>
-        <DialogContent className="sm:max-w-[425px]">
+      <Dialog open={confirmStatusModal.isOpen} onOpenChange={(isOpen) => !isOpen && setConfirmStatusModal({ isOpen: false, projectId: null, projectName: "", newStatus: null, newStatusName: null })}>
+        <DialogContent className="sm:max-w-md bg-background border-border">
           <DialogHeader>
-            <DialogTitle>Confirm Status Change</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to move <strong>{confirmStatusModal.projectName}</strong> to <strong>{confirmStatusModal.newStatus?.replace("_", " ")}</strong>?
-            </DialogDescription>
+            <DialogTitle className="text-xl">Change Project Status</DialogTitle>
           </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to move <strong>{confirmStatusModal.projectName}</strong> to <strong>{confirmStatusModal.newStatusName}</strong>?
+            </p>
+          </div>
           <DialogFooter className="mt-6">
-            <Button variant="outline" onClick={() => setConfirmStatusModal({ isOpen: false, projectId: null, projectName: "", newStatus: null })} disabled={isPending}>
+            <Button variant="outline" onClick={() => setConfirmStatusModal({ isOpen: false, projectId: null, projectName: "", newStatus: null, newStatusName: null })} disabled={isPending}>
               Cancel
             </Button>
             <Button onClick={handleConfirmStatusChange} disabled={isPending}>

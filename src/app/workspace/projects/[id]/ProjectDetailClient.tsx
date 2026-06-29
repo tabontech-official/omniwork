@@ -21,7 +21,7 @@ import { createTaskAction, updateTaskAction, deleteTaskAction } from '@/app/acti
 import { updateProjectAction } from '@/app/actions/projects';
 import ProjectConversation from './ProjectConversation';
 
-export default function ProjectDetailClient({ project, currentUser, users = [], taskStatuses = [] }: { project: any, currentUser: any, users?: any[], taskStatuses?: any[] }) {
+export default function ProjectDetailClient({ project, currentUser, users = [], taskStatuses = [], projectStatuses = [] }: { project: any, currentUser: any, users?: any[], taskStatuses?: any[], projectStatuses?: any[] }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [isPending, startTransition] = useTransition();
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
@@ -39,8 +39,40 @@ export default function ProjectDetailClient({ project, currentUser, users = [], 
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>(project.assignees.map((a: any) => a.userId));
   const [isMemberSelectOpen, setIsMemberSelectOpen] = useState(false);
   
-  const clients = users.filter(u => u.role === 'CLIENT' && u.status === 'ACTIVE');
-  const members = users.filter(u => u.role === 'MEMBER' && u.status === 'ACTIVE');
+  const clients = users.filter((u: any) => u.role === 'CLIENT' && u.status === 'ACTIVE');
+  const members = users.filter((u: any) => u.role === 'MEMBER' && u.status === 'ACTIVE');
+
+  // Inline Status Creation States
+  const [localProjectStatuses, setLocalProjectStatuses] = useState<any[]>(projectStatuses);
+  const [isCreatingStatus, setIsCreatingStatus] = useState(false);
+  const [newStatusName, setNewStatusName] = useState("");
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+
+  const handleCreateStatus = async () => {
+    if (!newStatusName.trim()) return;
+    setIsSavingStatus(true);
+    try {
+      const res = await fetch("/api/project-statuses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newStatusName.trim() }),
+      });
+      if (res.ok) {
+        const newStatus = await res.json();
+        setLocalProjectStatuses((prev) => [...prev, newStatus]);
+        setNewStatusName("");
+        setIsCreatingStatus(false);
+        toast.success("Status created successfully");
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Failed to create status");
+      }
+    } catch (e: any) {
+      toast.error("Failed to create status");
+    } finally {
+      setIsSavingStatus(false);
+    }
+  };
 
   // Permissions
   const isOwner = currentUser.role === 'OWNER';
@@ -214,13 +246,53 @@ export default function ProjectDetailClient({ project, currentUser, users = [], 
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Status</label>
-                        <select name="status" defaultValue={project.status} className="flex h-9 w-full rounded-xl border bg-background px-3 text-sm focus:ring-1 focus:ring-ring">
-                          <option value="PLANNING">Planning</option>
-                          <option value="IN_PROGRESS">In Progress</option>
-                          <option value="ON_HOLD">On Hold</option>
-                          <option value="COMPLETE">Complete</option>
-                        </select>
+                        <div className="flex justify-between items-center">
+                          <label className="text-sm font-medium">Status</label>
+                          <button 
+                            type="button" 
+                            onClick={() => setIsCreatingStatus(!isCreatingStatus)} 
+                            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                          >
+                            {isCreatingStatus ? "Cancel" : "+ New Status"}
+                          </button>
+                        </div>
+                        {isCreatingStatus ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              placeholder="Status Name (e.g. Planning)"
+                              value={newStatusName}
+                              onChange={(e) => setNewStatusName(e.target.value)}
+                              disabled={isSavingStatus}
+                              className="h-9"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={handleCreateStatus}
+                              disabled={isSavingStatus || !newStatusName.trim()}
+                              className="h-9"
+                            >
+                              {isSavingStatus ? "..." : "Save"}
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            {localProjectStatuses.length === 0 ? (
+                              <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                                No statuses available.{' '}
+                                <button type="button" onClick={() => setIsCreatingStatus(true)} className="font-semibold underline">
+                                  Create one here.
+                                </button>
+                              </div>
+                            ) : (
+                              <select name="statusId" defaultValue={project.statusId} className="flex h-9 w-full rounded-xl border bg-background px-3 text-sm focus:ring-1 focus:ring-ring">
+                                {localProjectStatuses.map((s) => (
+                                  <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                              </select>
+                            )}
+                          </>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <label className="text-sm font-medium">Priority</label>

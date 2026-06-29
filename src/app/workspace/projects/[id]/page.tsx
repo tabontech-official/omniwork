@@ -50,6 +50,11 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     },
   });
 
+  const projectStatuses = await prisma.projectStatus.findMany({
+    where: { organizationId: session.organizationId },
+    orderBy: { order: 'asc' }
+  });
+
   if (!project) {
     return (
       <div className="p-12 text-center">
@@ -73,5 +78,5 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
     orderBy: { order: 'asc' }
   });
 
-  return <ProjectDetailClient project={project} currentUser={session} users={users} taskStatuses={taskStatuses} />;
+  return <ProjectDetailClient project={project} currentUser={session} users={users} taskStatuses={taskStatuses} projectStatuses={projectStatuses} />;
 }

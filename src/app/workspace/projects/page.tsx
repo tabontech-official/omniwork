@@ -3,15 +3,20 @@ import { getProjectsAction } from '@/app/actions/projects';
 import { getUsersAction } from '@/app/actions/users';
 import { getCurrentUser } from '@/app/actions/auth';
 import { redirect } from 'next/navigation';
+import { prisma } from '@/lib/db';
 import ProjectsClient from './ProjectsClient';
 
 export default async function ProjectsPage() {
   const currentUser = await getCurrentUser();
   if (!currentUser) redirect('/login');
 
-  const [projectsRes, usersRes] = await Promise.all([
+  const [projectsRes, usersRes, projectStatuses] = await Promise.all([
     getProjectsAction(),
-    getUsersAction() // We need users to populate the PM/Client dropdowns for Owners
+    getUsersAction(), // We need users to populate the PM/Client dropdowns for Owners
+    prisma.projectStatus.findMany({
+      where: { organizationId: currentUser.organizationId },
+      orderBy: { order: 'asc' }
+    })
   ]);
 
   if (!projectsRes.success) {
@@ -21,5 +26,5 @@ export default async function ProjectsPage() {
   const projects = projectsRes.projects || [];
   const users = usersRes.success ? (usersRes.users || []) : [];
 
-  return <ProjectsClient initialProjects={projects} users={users} currentUser={currentUser} />;
+  return <ProjectsClient initialProjects={projects} users={users} currentUser={currentUser} projectStatuses={projectStatuses} />;
 }
