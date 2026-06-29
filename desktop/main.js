@@ -22,7 +22,7 @@ const screenshots = [];
 const activityLogs = [];
 const idlePeriods = [];
 
-const API_BASE = 'http://localhost:3000/api/desktop';
+const API_BASE = 'https://omniwork.vercel.app/api/desktop';
 
 function createWindow() {
   mainWindow = new BrowserWindow({

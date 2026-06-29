@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Users, Trash2, X } from "lucide-react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -218,18 +219,31 @@ export default function GlobalCreateProjectModal({
               {/* Configuration */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Status</label>
-                  <select
-                    name="statusId"
-                    className="flex h-9 w-full rounded-xl border bg-background px-3 text-sm focus:ring-1 focus:ring-ring"
-                  >
-                    <option value="">No Status</option>
-                    {projectStatuses.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex justify-between items-center">
+                    <label className="text-sm font-medium">Status</label>
+                    <Link href="/workspace/settings" onClick={() => setIsOpen(false)} className="text-xs text-blue-600 hover:underline">
+                      Manage Statuses
+                    </Link>
+                  </div>
+                  {projectStatuses.length === 0 ? (
+                    <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                      No statuses available.{' '}
+                      <Link href="/workspace/settings" onClick={() => setIsOpen(false)} className="font-semibold underline">
+                        Create one here.
+                      </Link>
+                    </div>
+                  ) : (
+                    <select
+                      name="statusId"
+                      className="flex h-9 w-full rounded-xl border bg-background px-3 text-sm focus:ring-1 focus:ring-ring"
+                    >
+                      {projectStatuses.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Priority</label>

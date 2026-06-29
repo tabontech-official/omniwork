@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Trash2, Plus, Edit2, Check, X } from 'lucide-react';
 
-export default function ProjectStatusesSettings() {
+export function TaskStatusesTab() {
   const [statuses, setStatuses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newStatusName, setNewStatusName] = useState('');
@@ -14,31 +14,14 @@ export default function ProjectStatusesSettings() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
-  const [orgId, setOrgId] = useState<string | null>(null);
 
   useEffect(() => {
-    // In a real app, you'd get the orgId from a context or session
-    // For now we can fetch the user's active org from an API or local state
-    // We'll just fetch `/api/auth/session` to get the user context if needed
-    // Or we fetch the statuses directly and the backend uses the user's org.
-    // Wait, the API requires `?orgId=...` so we need the orgId.
-    // Let's get it from localStorage or fetch the user profile.
-    
-    const fetchProfile = async () => {
-      try {
-        const res = await fetch('/api/auth/me'); // assuming such endpoint exists, or we just rely on cookies on the backend without passing orgId explicitly?
-        // Actually, our API required orgId, let me change the API to just use user.organizationId instead of requiring it in query to simplify.
-      } catch (err) {}
-    }
-    
     fetchStatuses();
   }, []);
 
   const fetchStatuses = async () => {
     try {
-      // For simplicity, let's assume the API doesn't actually need orgId if it reads it from user. 
-      // But we wrote it to require orgId. I should update the API to use user.organizationId.
-      const res = await fetch('/api/project-statuses?orgId=dummy'); // Temporarily bypassing if I update the backend.
+      const res = await fetch(`/api/task-statuses`);
       if (res.ok) {
         const data = await res.json();
         setStatuses(data);
@@ -53,14 +36,10 @@ export default function ProjectStatusesSettings() {
   const handleCreate = async () => {
     if (!newStatusName.trim()) return;
     try {
-      const res = await fetch('/api/project-statuses', {
+      const res = await fetch('/api/task-statuses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newStatusName,
-          color: newStatusColor,
-          organizationId: 'dummy' // Will be handled by backend update
-        })
+        body: JSON.stringify({ name: newStatusName.trim(), color: newStatusColor })
       });
       if (res.ok) {
         setNewStatusName('');
@@ -74,7 +53,7 @@ export default function ProjectStatusesSettings() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this status?')) return;
     try {
-      const res = await fetch(`/api/project-statuses/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/task-statuses/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchStatuses();
       }
@@ -95,7 +74,7 @@ export default function ProjectStatusesSettings() {
 
   const saveEdit = async (id: string) => {
     try {
-      const res = await fetch(`/api/project-statuses/${id}`, {
+      const res = await fetch(`/api/task-statuses/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: editName, color: editColor })
@@ -112,7 +91,7 @@ export default function ProjectStatusesSettings() {
   return (
     <div className="p-8 max-w-4xl mx-auto w-full">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">Project Statuses</h1>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">Task Statuses</h1>
         <p className="text-slate-500">Manage the statuses available for projects in your organization.</p>
       </div>
 

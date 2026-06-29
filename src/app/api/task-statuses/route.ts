@@ -12,14 +12,14 @@ export async function GET(req: Request) {
     // We no longer need to check query params since we use session.organizationId
     const orgId = user.organizationId;
 
-    const statuses = await prisma.projectStatus.findMany({
+    const statuses = await prisma.taskStatus.findMany({
       where: { organizationId: orgId },
       orderBy: { order: 'asc' }
     });
 
     return NextResponse.json(statuses);
   } catch (error: any) {
-    console.error("GET project-statuses error:", error);
+    console.error("GET task-statuses error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     const orgId = user.organizationId;
 
     // Check if status with name already exists in org
-    const existing = await prisma.projectStatus.findFirst({
+    const existing = await prisma.taskStatus.findFirst({
       where: { name, organizationId: orgId }
     });
 
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "A status with this name already exists" }, { status: 400 });
     }
 
-    const maxOrder = await prisma.projectStatus.findFirst({
+    const maxOrder = await prisma.taskStatus.findFirst({
       where: { organizationId: orgId },
       orderBy: { order: 'desc' },
       select: { order: true }
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     
     const newOrder = maxOrder ? maxOrder.order + 1 : 0;
 
-    const status = await prisma.projectStatus.create({
+    const status = await prisma.taskStatus.create({
       data: {
         name,
         color: color || '#64748b',
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(status);
   } catch (error: any) {
-    console.error("POST project-statuses error:", error);
+    console.error("POST task-statuses error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
